@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#2f6fe0" />
+    <title>Sling Plane</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="speed-lines" aria-hidden="true"></canvas>
+    <div id="edge-warn" aria-hidden="true"></div>
+    <div id="edge-flash" aria-hidden="true"></div>
+    <div id="hud" class="hidden">
+      <div id="stats-pill" class="stats ui">
+        <div class="dist"><span id="dist">0</span><small>m</small></div>
+        <div class="sub">Best <span id="best">0</span>m</div>
+      </div>
+      <div class="right">
+        <div class="coins ui"><span class="coin-icon"></span><span id="coins">0</span></div>
+      </div>
+    </div>
+    <div id="goal" class="ui hidden">
+      <div class="goal-head"><span id="goal-name"></span><span id="goal-target"></span></div>
+      <div class="goal-track">
+        <div id="goal-ghost"></div>
+        <div id="goal-fill"></div>
+        <div id="goal-best" class="hidden"></div>
+        <svg class="goal-flag" viewBox="0 0 16 18" aria-hidden="true"><path class="pole" d="M3 17V2" /><path class="cloth" d="M3.5 2.5h10l-2.6 3.2 2.6 3.3h-10z" /></svg>
+      </div>
+      <div class="goal-foot"><span id="goal-best-label" class="hidden"></span></div>
+    </div>
+    <button id="mute" class="btn btn-blue btn-round" aria-label="Toggle sound"><svg class="icon on" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg><svg class="icon off" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="m23 9-6 6M17 9l6 6"/></svg></button>
+    <div id="power" class="ui hidden"><span class="power-label">Power</span><div class="power-track"><div id="power-sweet"></div><div id="power-fill"></div></div></div>
+    <div id="fuel" class="ui hidden"><div class="label">Fuel</div><div class="bar"><div id="fuel-fill"></div></div></div>
+    <svg id="speedo" class="hidden"></svg>
+    <div id="altimeter" class="hidden"></div>
+    <button id="boost-btn" class="btn btn-orange hidden"><span>Boost</span><div class="bar"><div id="rocket-fill"></div></div></button>
+    <button id="hangar-btn" class="btn btn-blue hidden"><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Hangar<span id="hangar-badge" class="badge hidden"></span></button>
+    <div id="hint" class="ui"></div>
+
+    <div id="title">
+      <div class="logo" data-text="Sling Plane">Sling Plane</div>
+      <div id="title-level" class="title-level ui"></div>
+      <div id="title-best" class="title-best"></div>
+      <div class="start btn btn-green">Tap to fly<small>or press Space</small></div>
+    </div>
+
+    <div id="result" class="hidden">
+      <div class="panel ui">
+        <div class="ribbon">Distance</div>
+        <div class="big"><span id="result-dist">0</span><small>m</small></div>
+        <div id="result-best" class="label"></div>
+        <div id="result-unlock" class="unlock hidden"></div>
+        <div class="rows">
+          <div><span>Distance bonus</span><span id="result-distcoins">0</span></div>
+          <div><span>Coins collected</span><span id="result-pickups">0</span></div>
+          <div><span>Coin value</span><span id="result-mult">×1</span></div>
+          <div id="row-biome"><span id="result-biome-name">Biome bonus</span><span id="result-biome">×1</span></div>
+          <div id="row-record"><span>Record bonus</span><span id="result-record">+0</span></div>
+          <div id="row-checkpoint"><span>Level complete</span><span id="result-checkpoint">+0</span></div>
+          <div class="total"><span>Earned</span><span><span class="coin-icon"></span><span id="result-total">0</span></span></div>
+        </div>
+        <div class="wallet-row"><span>Wallet</span><span class="coin-icon"></span><span id="result-wallet">0</span></div>
+        <div class="buttons">
+          <button id="result-hangar" class="btn btn-blue"><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Hangar<span id="result-badge" class="badge hidden"></span></button>
+          <button id="result-fly" class="btn btn-green">Fly again</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="hangar" class="hidden">
+      <div class="hangar-screen">
+        <header class="hangar-top">
+          <div class="hangar-name">
+            <div class="title" data-text="Hangar">Hangar</div>
+            <div class="hangar-sub"></div>
+          </div>
+          <div class="wallet ui"><span class="coin-icon"></span><span class="wallet-amount">0</span></div>
+        </header>
+        <nav class="tabs"></nav>
+        <div class="cards"></div>
+        <footer class="hangar-bottom">
+          <div id="dev" class="hidden"><button id="dev-coins" class="btn btn-small btn-blue">+1000</button></div>
+          <button id="reset-progress" class="btn btn-small btn-plain">Reset progress</button>
+          <button id="hangar-fly" class="btn btn-green">Fly</button>
+        </footer>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
