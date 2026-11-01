@@ -3,10 +3,6 @@ export type TreeKind = 'pine' | 'snowPine' | 'broadleaf' | 'cactus' | 'rock' | '
 export interface Biome {
   id: string;
   name: string;
-  /** Finish line: flying past it completes the level and unlocks the next biome. */
-  target: number;
-  /** One-off coins for the first time you cross the finish line. */
-  reward: number;
   /** Multiplies everything earned while flying here. */
   coinBonus: number;
   accent: number;
@@ -26,14 +22,11 @@ export interface Biome {
   trees: TreeKind[];
 }
 
-// Finish lines are spaced along the upgrade curve so each level takes a good number of runs:
-// the meadow needs proper wings and a propeller, the volcano needs nearly the whole tree.
+// Visual themes. Each one hosts several levels (see LEVELS below).
 export const BIOMES: Biome[] = [
   {
     id: 'meadow',
     name: 'Meadow',
-    target: 450,
-    reward: 300,
     coinBonus: 1,
     accent: 0x30d158,
     skyTop: 0x3d8fe0,
@@ -50,9 +43,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'desert',
     name: 'Desert',
-    target: 950,
-    reward: 800,
-    coinBonus: 1.5,
+    coinBonus: 1.25,
     accent: 0xff9f0a,
     skyTop: 0x4a9be0,
     horizon: 0xf3dfba,
@@ -68,9 +59,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'autumn',
     name: 'Autumn Woods',
-    target: 1550,
-    reward: 1800,
-    coinBonus: 2,
+    coinBonus: 1.5,
     accent: 0xff6b2c,
     skyTop: 0x5a8fd0,
     horizon: 0xf2d9c0,
@@ -86,9 +75,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'tundra',
     name: 'Tundra',
-    target: 2300,
-    reward: 3500,
-    coinBonus: 2.5,
+    coinBonus: 1.75,
     accent: 0x64d2ff,
     skyTop: 0x6fa8dc,
     horizon: 0xe6f0f7,
@@ -104,9 +91,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'volcano',
     name: 'Volcano',
-    target: 3300,
-    reward: 6000,
-    coinBonus: 3,
+    coinBonus: 2,
     accent: 0xff453a,
     skyTop: 0x4a3a5a,
     horizon: 0xd99a7a,
@@ -120,3 +105,39 @@ export const BIOMES: Biome[] = [
     trees: ['rock', 'deadTree', 'rock'],
   },
 ];
+
+export interface Level extends Biome {
+  /** 1-based level number. */
+  n: number;
+  /** Index into BIOMES for the scenery. */
+  theme: number;
+  /** 0 on the first level to 4 on the last: obstacle density and turbulence. */
+  difficulty: number;
+  /** Finish line: flying past it completes the level and unlocks the next one. */
+  target: number;
+  /** One-off coins for the first time you cross the finish line. */
+  reward: number;
+}
+
+export const LEVELS_PER_BIOME = 5;
+
+// Finish lines climb along the upgrade curve so each level asks for a couple more upgrades:
+// the first needs a few cheap parts, the last needs nearly the whole tree and a clean flight.
+const FIRST_TARGET = 300;
+const LAST_TARGET = 3600;
+export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
+  Array.from({ length: LEVELS_PER_BIOME }, (_, k) => {
+    const i = theme * LEVELS_PER_BIOME + k;
+    const t = i / (BIOMES.length * LEVELS_PER_BIOME - 1);
+    const target = Math.round((FIRST_TARGET + (LAST_TARGET - FIRST_TARGET) * t ** 1.15) / 50) * 50;
+    return {
+      ...b,
+      id: `L${i + 1}`,
+      n: i + 1,
+      theme,
+      difficulty: 4 * t,
+      target,
+      reward: Math.round((target * 0.12 * b.coinBonus) / 10) * 10,
+    };
+  }),
+);

@@ -25,13 +25,17 @@ export interface Upgrade {
   apply(s: PlaneStats, level: number): void;
 }
 
-/** Geometric cost curve rounded to friendly numbers. */
-const curve = (base: number, growth: number) => (level: number) => {
-  const raw = base * growth ** (level - 1);
-  const step = raw < 100 ? 5 : raw < 1000 ? 10 : 50;
+/** Scales every price in the tree; the main knob for how long the game lasts. */
+const PRICE = 8;
+const friendly = (raw: number) => {
+  const step = raw < 100 ? 5 : raw < 1000 ? 10 : raw < 10000 ? 50 : 500;
   return Math.round(raw / step) * step;
 };
-const table = (costs: number[]) => (level: number) => costs[level - 1];
+/** Geometric cost curve rounded to friendly numbers. */
+// Cheap first parts stay cheap so the opening flows; the scale bites from a few hundred coins up.
+const priced = (raw: number) => friendly(raw * (1 + (PRICE - 1) * Math.min(1, raw / 400)));
+const curve = (base: number, growth: number) => (level: number) => priced(base * growth ** (level - 1));
+const table = (costs: number[]) => (level: number) => priced(costs[level - 1]);
 
 // Wing tiers: big induced drag + high stall speed with no wings, a long glide at the top
 const WINGS = [

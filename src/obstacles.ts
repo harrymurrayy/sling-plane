@@ -230,8 +230,8 @@ export class Obstacles {
     for (const b of this.balloons) this.scene.remove(b.group);
     this.gates = [];
     this.balloons = [];
-    this.nextGateX = 400 + Math.random() * 120;
-    this.nextHazardX = 200 + Math.random() * 60;
+    this.nextGateX = 260 + Math.random() * 120;
+    this.nextHazardX = 140 + Math.random() * 60;
   }
 
   /** Call once per frame while flying. `onSpawn(x0, x1)` lets other spawners keep that stretch clear. */

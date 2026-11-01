@@ -1,4 +1,4 @@
-import { BIOMES } from './biomes';
+import { BIOMES, LEVELS } from './biomes';
 import { ICONS } from './icons';
 import { LAUNCH, PERFECT_BONUS, type PlaneStats } from './config';
 import { createFlight, stepFlight } from './flight';
@@ -22,7 +22,7 @@ export interface HangarHooks {
   buy(u: Upgrade): void;
   stats(): PlaneStats;
   bests(): Record<string, number>;
-  biomeIndex(): number;
+  levelIndex(): number;
   career(): Career;
 }
 
@@ -262,7 +262,7 @@ export class Hangar {
     const s = this.hooks.stats();
     const c = this.hooks.career();
     const bests = this.hooks.bests();
-    const current = BIOMES[this.hooks.biomeIndex()];
+    const current = LEVELS[this.hooks.levelIndex()];
     const range = rangeOf(this.hooks.levels());
     const reach = range / current.target;
 
@@ -281,7 +281,7 @@ export class Hangar {
       </div>
       <div class="stat-reach ${reach >= 1 ? 'ok' : ''}">
         <span>${reach >= 1 ? 'Reaches' : `${Math.round(reach * 100)}% of`}</span>
-        <b>${current.name} finish</b>
+        <b>Level ${current.n} finish</b>
         <span>${num(current.target)}m</span>
       </div>
     </div>`;
@@ -301,14 +301,17 @@ export class Hangar {
       row('Boost ring', `+${s.ringBoost} m/s`, s.ringBoost / MAXED.ringBoost),
     ].join(''));
 
-    const maps = section('Maps', BIOMES.map((b, i) => {
-      const best = bests[b.id] ?? 0;
-      const locked = i > this.hooks.biomeIndex() && best === 0;
-      const done = best >= b.target;
-      const value = locked ? 'Locked' : done ? `Finished · ${num(best)}m` : `${num(best)} / ${num(b.target)}m`;
+    // One row per biome: how many of its levels are cleared
+    const at = this.hooks.levelIndex();
+    const maps = section('Maps', BIOMES.map((b, theme) => {
+      const levels = LEVELS.filter((l) => l.theme === theme);
+      const cleared = levels.filter((l) => (bests[l.id] ?? 0) >= l.target).length;
+      const locked = levels[0].n - 1 > at;
+      const done = cleared === levels.length;
+      const value = locked ? 'Locked' : done ? 'Finished' : `${cleared} / ${levels.length} levels`;
       return `<div class="stat-row map ${locked ? 'locked' : ''} ${done ? 'done' : ''}" style="--accent:#${b.accent.toString(16).padStart(6, '0')}">
         <span class="stat-label"><i class="dot"></i>${b.name}</span><span class="stat-value">${value}</span>
-        <div class="stat-bar"><i style="width:${Math.min(1, best / b.target) * 100}%"></i></div>
+        <div class="stat-bar"><i style="width:${(cleared / levels.length) * 100}%"></i></div>
       </div>`;
     }).join(''));
 

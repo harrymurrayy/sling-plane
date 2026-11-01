@@ -12,7 +12,7 @@ import { Pickups } from './pickups';
 import { Obstacles } from './obstacles';
 import { createPlaneMesh, type PlaneModel } from './planeModel';
 import { computeStats, partsOf, type Levels, type Upgrade } from './upgrades';
-import { BIOMES } from './biomes';
+import { BIOMES, LEVELS } from './biomes';
 import {
   Scenery, Trail, createGround, createHorizon, createSky, createSlingshot, followGround, paintGround, paintSky, type Slingshot,
 } from './world';
@@ -38,16 +38,17 @@ let bests = load<Record<string, number> | null>('bests', null);
 let best = 0;
 let wallet = load('coins', 0);
 let levels: Levels = load('levels', {});
-let biomeIndex = Math.min(load('biome', 0), BIOMES.length - 1);
-const biome = () => BIOMES[biomeIndex];
-if (!bests) {
-  // Older saves raced through biomes on much closer checkpoints: start the levels again, keep coins and upgrades
-  bests = { meadow: load('best', 0) };
-  biomeIndex = 0;
+let levelIndex = Math.min(load('level', -1), LEVELS.length - 1);
+const level = () => LEVELS[levelIndex];
+if (!bests || levelIndex < 0) {
+  // Saves from before the 25-level campaign: start at the first level of the biome you'd reached,
+  // keep coins and upgrades
+  levelIndex = Math.min(load('biome', 0), BIOMES.length - 1) * LEVELS.length / BIOMES.length;
+  bests = {};
   save('bests', bests);
-  save('biome', 0);
+  save('level', levelIndex);
 }
-const syncBest = () => (best = bests![biome().id] ?? 0);
+const syncBest = () => (best = bests![level().id] ?? 0);
 syncBest();
 if (levels.gear) {
   wallet += [0, 30, 180, 780][levels.gear] ?? 0;
@@ -106,9 +107,9 @@ const sound = new Sound();
 // ---------- Biomes ----------
 let paintedBiome = -1;
 function applyBiome() {
-  if (paintedBiome === biomeIndex) return;
-  paintedBiome = biomeIndex;
-  const b = biome();
+  if (paintedBiome === level().theme) return;
+  paintedBiome = level().theme;
+  const b = level();
   (scene.background as THREE.Color).set(b.horizon);
   fog.color.set(b.horizon);
   hemi.color.set(b.hemi[0]);
@@ -234,7 +235,7 @@ const hangar = new Hangar(hangarEl, {
   wallet: () => wallet,
   stats: () => stats,
   bests: () => bests!,
-  biomeIndex: () => biomeIndex,
+  levelIndex: () => levelIndex,
   career: () => career,
   buy(u: Upgrade) {
     const next = (levels[u.id] ?? 0) + 1;
@@ -283,8 +284,8 @@ resetBtn.addEventListener('click', () => {
   save('coins', 0);
   save('best', 0);
   save('levels', levels);
-  biomeIndex = 0;
-  save('biome', 0);
+  levelIndex = 0;
+  save('level', 0);
   applyBiome();
   updateTitle();
   hud.best.textContent = '0';
@@ -340,7 +341,7 @@ function setFlightHud(on: boolean) {
 
 function clearRunEffects() {
   scenery.reset();
-  scenery.setGoals(best, biome().target, biome().accent);
+  scenery.setGoals(best, level().target, level().accent);
   pickups.reset();
   obstacles.reset();
   trails.forEach((t) => t.clear());
@@ -419,8 +420,8 @@ function launch() {
   flight = createFlight(stats, pocket.x, pocket.y, pocket.z, launchSpeed(), LAUNCH.pitch, aim.yaw);
   state = 'flying';
   crashTimer = 0;
-  air = makeAir(0.35 + 0.15 * biomeIndex);
-  obstacles.setLevel(biomeIndex);
+  air = makeAir(0.35 + 0.15 * level().difficulty);
+  obstacles.setLevel(level().difficulty);
   // Mid-flight the pill shows this run's running total (see showRunTotal)
   hud.coins.textContent = '+0';
   bestAtLaunch = best;
@@ -454,7 +455,7 @@ function finishLanding() {
 
 /** Everything a run is worth at `dist`: the same sum the results screen pays out. */
 function runEarnings(dist: number) {
-  const b = biome();
+  const b = level();
   const distCoins = Math.floor((dist / 10) * stats.distanceCoins);
   // Beating your best pays 1 coin per 4m beaten; the first finish on a map pays its reward
   const recordBonus = bestAtLaunch > 0 && dist > bestAtLaunch ? Math.round(((dist - bestAtLaunch) / 4) * stats.coinMultiplier) : 0;
@@ -475,7 +476,7 @@ function endRun() {
   boostHeld = false;
   hud.boostBtn.classList.remove('firing');
   hud.goal.classList.add('hidden');
-  const b = biome();
+  const b = level();
   const dist = Math.max(0, Math.floor(flight.x));
   const { distCoins, recordBonus, finishReward, earned } = runEarnings(dist);
   const before = wallet;
@@ -504,20 +505,21 @@ function endRun() {
     best = bests![b.id] = dist;
     save('bests', bests);
   } else {
-    $('result-best').textContent = `Best on ${b.name}: ${best.toLocaleString()}m`;
+    $('result-best').textContent = `Best on level ${b.n}: ${best.toLocaleString()}m`;
   }
 
   // Completing the level moves you on to the next biome for the next flight
-  const next = reachedFinish ? BIOMES[biomeIndex + 1] : undefined;
+  const next = reachedFinish ? LEVELS[levelIndex + 1] : undefined;
+  const newBiome = next && next.theme !== b.theme;
   if (next) {
-    biomeIndex++;
-    save('biome', biomeIndex);
+    levelIndex++;
+    save('level', levelIndex);
     syncBest();
   }
   updateTitle();
   $('result-unlock').classList.toggle('hidden', !next);
-  if (next) $('result-unlock').innerHTML = `<b>${next.name} unlocked</b><span>Finish line at ${next.target.toLocaleString()}m</span>`;
-  $('result-fly').textContent = next ? `Fly to ${next.name}` : 'Fly again';
+  if (next) $('result-unlock').innerHTML = `<b>${newBiome ? `${next.name} unlocked` : `Level ${next.n} unlocked`}</b><span>Finish line at ${next.target.toLocaleString()}m</span>`;
+  $('result-fly').textContent = next ? `Fly level ${next.n}` : 'Fly again';
   countUp($('result-dist'), 0, dist, 700);
   countUp($('result-total'), 0, earned, 900, '+');
   countUp($('result-wallet'), before, wallet, 900);
@@ -792,11 +794,11 @@ function emitFlightEffects() {
 
 // ---------- Goals: progress to this map's finish line, with your best marked ----------
 function showGoal(x: number) {
-  const b = biome();
+  const b = level();
   const mark = state === 'flying' ? bestAtLaunch : best;
   const markPos = Math.min(1, mark / b.target);
   hud.goal.style.setProperty('--accent', `#${b.accent.toString(16).padStart(6, '0')}`);
-  hud.goalName.innerHTML = `<b>Level ${biomeIndex + 1}</b> ${b.name}`;
+  hud.goalName.innerHTML = `<b>Level ${b.n}</b> ${b.name}`;
   hud.goalFill.style.width = `${Math.min(1, x / b.target) * 100}%`;
   hud.goalGhost.style.width = `${markPos * 100}%`;
   hud.goalBest.classList.toggle('hidden', mark <= 0);
@@ -824,7 +826,7 @@ function trackGoals() {
     sound.perfect();
     vibrate(30);
   }
-  const b = biome();
+  const b = level();
   if (!reachedFinish && x >= b.target) {
     reachedFinish = true;
     hud.goal.classList.add('cleared');
@@ -842,8 +844,8 @@ function trackGoals() {
 }
 
 function updateTitle() {
-  const b = biome();
-  $('title-level').textContent = `Level ${biomeIndex + 1} of ${BIOMES.length} · ${b.name}`;
+  const b = level();
+  $('title-level').textContent = `Level ${b.n} of ${LEVELS.length} · ${b.name}`;
   $('title-best').textContent = best > 0 ? `Best ${best.toLocaleString()}m of ${b.target.toLocaleString()}m` : `Finish line ${b.target.toLocaleString()}m`;
 }
 
