@@ -340,7 +340,8 @@ let career: Career = { ...NEW_CAREER, ...load<Partial<Career>>('career', {}) };
 let ringsHit = 0;
 let runHits = 0;
 let launchedPerfect = false;
-// Stars lit on the goal bar this flight: ones you already had plus any earned so far
+// Stars earned so far this flight. A level keeps its best single flight, so all three
+// only count when you get them in the same run.
 let liveStars = 0;
 let bestAtLaunch = 0;
 let passedBest = false;
@@ -479,8 +480,8 @@ function launch() {
   passedBest = reachedFinish = false;
   runHits = 0;
   launchedPerfect = isPerfect();
-  liveStars = stars[level().id] ?? 0;
-  hud.goalStars.innerHTML = starRow(liveStars);
+  liveStars = 0;
+  hud.goalStars.innerHTML = starRow(0);
   hud.statsPill.classList.remove('record');
   hud.goal.classList.remove('cleared');
   showGoal(0);
@@ -535,13 +536,13 @@ function endRun() {
   const b = level();
   const dist = Math.max(0, Math.floor(flight.x));
   const { distCoins, recordBonus, finishReward, earned: flown } = runEarnings(dist);
-  // Stars lit during the flight that you didn't have before pay out once
+  // A level's stars are its best single flight; beating your star count pays for the difference
   const hadStars = stars[b.id] ?? 0;
-  const newStars = liveStars & ~hadStars;
-  const starCoins = countStars(newStars) * starReward(b);
+  const gained = Math.max(0, countStars(liveStars) - countStars(hadStars));
+  const starCoins = gained * starReward(b);
   const earned = flown + starCoins;
-  if (newStars) {
-    stars = { ...stars, [b.id]: hadStars | newStars };
+  if (gained) {
+    stars = { ...stars, [b.id]: liveStars };
     save('stars', stars);
   }
   const before = wallet;
@@ -566,10 +567,13 @@ function endRun() {
   $('row-checkpoint').classList.toggle('hidden', finishReward === 0);
   $('result-starcoins').textContent = `+${starCoins}`;
   $('row-stars').classList.toggle('hidden', starCoins === 0);
-  const allStars = hadStars | newStars;
-  $('result-stars').innerHTML = starRow(allStars, newStars);
-  const todo = challengesFor(b).find((_, i) => !(allStars & (1 << i)));
-  $('result-next').textContent = todo ? `Next star: ${todo.text}` : 'All three stars earned';
+  // This flight's stars; what it missed tells you what to fix next time
+  $('result-stars').innerHTML = starRow(liveStars, liveStars);
+  const missed = challengesFor(b).find((_, i) => !(liveStars & (1 << i)));
+  const bestCount = countStars(stars[b.id] ?? 0);
+  $('result-next').textContent = !missed ? 'All three in one flight!'
+    : gained ? `Missed: ${missed.text}`
+    : `Missed: ${missed.text} · Best ${bestCount}/3`;
 
   if (dist > best) {
     $('result-best').textContent = 'New best';

@@ -83,6 +83,7 @@ export class LevelMap {
           <div class="map-card-best">${best > 0 ? `<span>Best</span><b>${best.toLocaleString()}m</b>` : '<span>Not flown yet</span>'}</div>
         </div>
         <ul class="challenges">${rows}</ul>
+        <div class="challenge-note">Stars count from your best single flight</div>
       </div>`;
     const fly = document.getElementById('map-fly')!;
     fly.textContent = `Fly level ${l.n}`;
