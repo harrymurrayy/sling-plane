@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Sound } from './audio';
+import { buzz, persist } from './native';
 import { CEILING, LAUNCH, THIN_AIR, type PlaneStats, PERFECT_BONUS } from './config';
 import { createFlight, stepFlight, type FlightInput, type FlightState, ringBoost, SKIM_HEIGHT } from './flight';
 import { Altimeter, Speedo } from './gauges';
@@ -32,7 +33,9 @@ const load = <T>(key: string, fallback: T): T => {
 };
 const save = (key: string, v: unknown) => {
   try {
-    localStorage.setItem(`sling-plane:${key}`, JSON.stringify(v));
+    const raw = JSON.stringify(v);
+    localStorage.setItem(`sling-plane:${key}`, raw);
+    persist(key, raw);
   } catch {}
 };
 // Personal best per map; `best` is always the current map's
@@ -228,7 +231,7 @@ function countUp(el: HTMLElement, from: number, to: number, ms: number, prefix =
   requestAnimationFrame(tick);
 }
 
-const vibrate = (ms: number) => navigator.vibrate?.(ms);
+const vibrate = buzz;
 
 sound.muted = load('muted', false);
 hud.mute.classList.toggle('muted', sound.muted);
