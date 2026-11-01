@@ -26,7 +26,7 @@ export interface Upgrade {
 }
 
 /** Scales every price in the tree; the main knob for how long the game lasts. */
-const PRICE = 5;
+const PRICE = 2;
 const friendly = (raw: number) => {
   const step = raw < 100 ? 5 : raw < 1000 ? 10 : raw < 10000 ? 50 : 500;
   return Math.round(raw / step) * step;
@@ -179,7 +179,7 @@ export const UPGRADES: Upgrade[] = [
     maxLevel: ENGINE.length - 1,
     tiers: ENGINE.map((e) => e.name),
     describe: (l) => `${ENGINE[l].thrust} thrust (replaces the propeller's)`,
-    cost: table([600, 1200, 2400, 4500, 8000]),
+    cost: table([450, 800, 1300, 2000, 3000]),
     requires: { id: 'prop', level: 2 },
     apply: (s, l) => (s.thrust = Math.max(s.thrust, ENGINE[l].thrust)),
   },
@@ -190,7 +190,7 @@ export const UPGRADES: Upgrade[] = [
     maxLevel: ROCKETS.length - 1,
     tiers: ROCKETS.map((r) => r.name),
     describe: (l) => `Hold BOOST: ${ROCKETS[l].thrust} thrust for ${ROCKETS[l].fuel}s`,
-    cost: table([1500, 3000, 6000, 11000, 20000]),
+    cost: table([900, 1400, 2100, 3000, 4200]),
     requires: { id: 'engine', level: 1 },
     apply: (s, l) => Object.assign(s, { rocketThrust: ROCKETS[l].thrust, rocketFuel: ROCKETS[l].fuel }),
   },

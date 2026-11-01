@@ -48,7 +48,7 @@ export class LevelMap {
     const open = this.hooks.freeUnlocked();
     const i = LEVELS.length;
     return `<section class="map-biome free ${open ? '' : 'locked'}" style="--sky:${hex(FREE.skyTop)};--haze:${hex(FREE.horizon)};--hill:${hex(FREE.mountains[1])};--ground:${FREE.ground.base};--accent:${hex(FREE.accent)}">
-        <header><h3>Free flight</h3><span class="biome-stars">${open ? (best > 0 ? `Best ${best.toLocaleString()}m` : 'Open') : 'Clear level 25'}</span></header>
+        <header><h3>Free flight</h3><span class="biome-stars">${open ? (best > 0 ? `Best ${best.toLocaleString()}m` : 'Open') : `Clear level ${LEVELS.length}`}</span></header>
         <div class="map-path"><button class="node free-node ${open ? 'open' : 'locked'} ${sel === i ? 'selected' : ''}" data-level="${i}" ${open ? '' : 'disabled'} aria-label="Free flight">
           <span class="node-disc">${open ? '∞' : LOCK}</span>
         </button></div>

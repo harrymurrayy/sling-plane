@@ -270,6 +270,15 @@ const puffGeo = new THREE.IcosahedronGeometry(1.1, 2);
 const stemGeo = new THREE.CylinderGeometry(0.45, 0.6, 2, 12);
 const capGeo = new THREE.SphereGeometry(1.8, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
 const spotGeo = new THREE.SphereGeometry(0.22, 8, 6);
+// Coral reef
+const kelpGeo = new THREE.CapsuleGeometry(0.16, 1.5, 3, 6);
+const bladeGeo = new THREE.SphereGeometry(0.5, 8, 6).scale(0.35, 1.6, 0.12);
+const KELP = [0x3f8a4a, 0x5f9a34, 0x7f8f2a, 0x2f7a5a];
+const branchTipGeo = new THREE.SphereGeometry(0.32, 8, 6);
+const coralGeo = new THREE.CylinderGeometry(0.2, 0.3, 1.6, 7).translate(0, 0.8, 0);
+const brainGeo = new THREE.SphereGeometry(1.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+const ridgeGeo = new THREE.TorusGeometry(1.2, 0.12, 5, 22, Math.PI).rotateY(Math.PI / 2);
+const tubeGeo = new THREE.CylinderGeometry(0.22, 0.26, 1.4, 8, 1, true).translate(0, 0.7, 0);
 
 /** Builds one tree (or cactus, rock, ...) and returns its collision size. */
 function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group; radius: number; height: number } {
@@ -351,6 +360,50 @@ function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group;
       add(spotGeo, spots, 0, 3.7);
       return { obj, radius: 1.8, height: 3.7 };
     }
+    case 'kelp': {
+      // A swaying stalk of segments with leafy blades either side
+      const mat = lambert(KELP[i % KELP.length]);
+      const segs = 4 + (i % 3);
+      let x = 0;
+      for (let k = 0; k < segs; k++) {
+        const lean = Math.sin(k * 1.3 + i) * 0.18;
+        const seg = add(kelpGeo, mat, x, 0.9 + k * 1.6);
+        seg.rotation.z = lean;
+        x -= lean * 1.6;
+        const blade = add(bladeGeo, mat, x + (k % 2 ? 0.35 : -0.35), 1.4 + k * 1.6, 0);
+        blade.rotation.z = k % 2 ? -0.6 : 0.6;
+      }
+      return { obj, radius: 0.7, height: 1.6 * segs + 0.8 };
+    }
+    case 'coral': {
+      // Branching coral: stubby arms reaching up with round tips
+      const mat = lambert(color);
+      add(coralGeo, mat, 0, 0).scale.set(1.6, 1, 1.6);
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + i;
+        const tilt = 0.35 + (k % 3) * 0.2;
+        const len = 1.1 + ((k * 7 + i) % 5) * 0.18;
+        const arm = add(coralGeo, mat, 0, 1.3);
+        arm.rotation.set(Math.sin(a) * tilt, 0, Math.cos(a) * tilt);
+        arm.scale.y = len;
+        const tip = new THREE.Vector3(0, 1.6 * len, 0).applyEuler(arm.rotation).add(arm.position);
+        add(branchTipGeo, mat, tip.x, tip.y, tip.z);
+      }
+      return { obj, radius: 1.3, height: 3.3 };
+    }
+    case 'brainCoral': {
+      // A squashed dome with grooves, and a few tube sponges beside it
+      const mat = lambert(color);
+      add(brainGeo, mat, 0, 0).scale.set(1, 0.75, 1);
+      const groove = lambert(new THREE.Color(color).multiplyScalar(0.75).getHex());
+      for (const z of [-0.6, 0, 0.6]) add(ridgeGeo, groove, 0, 0, z).scale.set(1, 0.75, 1 - Math.abs(z) * 0.5);
+      const sponge = lambert(biome.foliage[(i + 2) % biome.foliage.length]);
+      for (let k = 0; k < 3; k++) {
+        const t = add(tubeGeo, sponge, 1.5 + k * 0.45, 0, (k - 1) * 0.5);
+        t.scale.y = 1 + k * 0.4;
+      }
+      return { obj, radius: 1.6, height: 2.1 };
+    }
     case 'deadTree': {
       const mat = lambert(biome.trunk);
       add(trunkGeo, mat, 0, 1).scale.set(0.8, 2, 0.8);
@@ -406,6 +459,8 @@ export class Scenery {
     }
     this.treeSet = new InstancedSet(this.scene, this.trees.map((t) => t.obj), true);
     this.cloudMat.color.set(biome.cloud);
+    // No clouds under the sea: fish fill the water instead
+    for (const m of this.cloudSet.meshes) m.visible = !biome.underwater;
     this.reset();
   }
 

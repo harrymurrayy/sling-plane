@@ -12,6 +12,7 @@ import { SpeedLines } from './speedlines';
 import { gustAt, makeAir, roughness, type Air } from './air';
 import { Pickups } from './pickups';
 import { Obstacles } from './obstacles';
+import { Sea } from './sea';
 import { createPlaneMesh, type PlaneModel } from './planeModel';
 import { UPGRADES, computeStats, partsOf, type Levels, type Upgrade } from './upgrades';
 import { BIOMES, FREE, LEVELS } from './biomes';
@@ -63,7 +64,8 @@ if (!bests || levelIndex < 0) {
   save('level', levelIndex);
 }
 // The furthest level you've reached; levelIndex is whichever one you've picked to fly
-let unlocked = Math.max(Math.min(levelIndex, LEVELS.length - 1), load('unlocked', 0));
+// (In dev a level picked past your progress mustn't count as unlocked; see mapUnlocked below)
+let unlocked = Math.max(import.meta.env.DEV ? 0 : Math.min(levelIndex, LEVELS.length - 1), load('unlocked', 0));
 const LAST = LEVELS[LEVELS.length - 1];
 const freeUnlocked = () => (bests![LAST.id] ?? 0) >= LAST.target;
 // Stars per level as a bitmask (bit i = challenge i)
@@ -118,6 +120,7 @@ scene.add(ground);
 const scenery = new Scenery(scene);
 const pickups = new Pickups(scene);
 const obstacles = new Obstacles(scene);
+const sea = new Sea(scene);
 const trails = [new Trail(scene), new Trail(scene)];
 const speedLines = new SpeedLines(document.getElementById('speed-lines') as HTMLCanvasElement);
 const smoke = new Particles(scene, 240, false);
@@ -138,6 +141,8 @@ function applyBiome() {
   paintSky(sky, horizon, b);
   paintGround(ground, b);
   scenery.setBiome(b);
+  sea.setActive(!!b.underwater);
+  obstacles.setUnderwater(!!b.underwater);
 }
 applyBiome();
 
@@ -302,14 +307,18 @@ const hangar = new Hangar(hangarEl, {
 });
 
 // ---------- Level map ----------
+// Dev server only: every level and free flight can be picked from the map. Saved progress is
+// untouched, so clearing levels still unlocks them as normal. Stripped from production builds.
+const mapUnlocked = () => (import.meta.env.DEV ? LEVELS.length - 1 : unlocked);
+const mapFreeUnlocked = () => import.meta.env.DEV || freeUnlocked();
 const levelMap = new LevelMap(mapEl, {
   stars: () => stars,
   bests: () => bests!,
-  unlocked: () => unlocked,
-  freeUnlocked,
+  unlocked: mapUnlocked,
+  freeUnlocked: mapFreeUnlocked,
   selected: () => levelIndex,
   select(i: number) {
-    const open = i <= unlocked || (i === LEVELS.length && freeUnlocked());
+    const open = i <= mapUnlocked() || (i === LEVELS.length && mapFreeUnlocked());
     if (!open || i === levelIndex) return;
     levelIndex = i;
     save('level', levelIndex);
@@ -435,6 +444,7 @@ function setFlightHud(on: boolean) {
 
 function clearRunEffects() {
   scenery.reset();
+  sea.reset(0, 0);
   scenery.setGoals(best, level().target, level().accent);
   pickups.reset();
   obstacles.reset();
@@ -917,8 +927,10 @@ function updateCamera(dt: number) {
   sky.position.copy(camera.position);
   horizon.position.set(camera.position.x, 0, camera.position.z);
   const alt = Math.max(0, camera.position.y);
-  fog.near = 160 + alt * 1.5;
-  fog.far = 600 + alt * 4;
+  // Murkier under the sea
+  const murk = sea.active ? 0.6 : 1;
+  fog.near = (160 + alt * 1.5) * murk;
+  fog.far = (600 + alt * 4) * murk;
 }
 
 // ---------- Loop ----------
@@ -1205,6 +1217,7 @@ function frame(now: number) {
   const p = model.group.position;
   followGround(ground, p.x, p.z);
   scenery.update(p.x, p.z);
+  sea.update(dt, p, camera);
   // Fixed sun direction, aimed at the ground under the plane
   sun.target.position.set(p.x, 0, p.z);
   sun.position.copy(sun.target.position).add(SUN_DIR);

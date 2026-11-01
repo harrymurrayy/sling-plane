@@ -4,6 +4,7 @@ import { CEILING } from './config';
 // Things in the air you have to fly around or through:
 //  - Gates: an energy barrier from the ground to the ceiling with one window in it. Thread it.
 //  - Hot-air balloons: big, slowly rising and sinking. Time your way past.
+//    Under the sea they're jellyfish instead: same size and drift, pulsing as they swim.
 // Clipping any of them costs most of your speed, so each one is a decision you have to make.
 
 export interface ObstacleEvents {
@@ -67,7 +68,9 @@ interface Gate {
 interface Balloon {
   group: THREE.Group;
   envelope: THREE.Mesh;
+  /** Burner flame, or the jellyfish's inner glow. */
   flame: THREE.Sprite;
+  tentacles?: THREE.Mesh[];
   baseY: number;
   phase: number;
   wobble: number;
@@ -157,8 +160,21 @@ const BALLOON_COLOURS: [string, string, string][] = [
   ['#ff9f0a', '#ff375f', '#1c1c1e'],
 ];
 
+const JELLY_COLOURS = [0xff7ad9, 0xb98bff, 0x7ad8ff, 0xffa36b];
+
+/** A wavy strand hanging straight down from the origin. */
+function strandGeometry(length: number, radius: number, waves: number): THREE.TubeGeometry {
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    pts.push(new THREE.Vector3(Math.sin(t * Math.PI * waves) * 0.5 * t, -t * length, Math.cos(t * Math.PI * waves) * 0.3 * t));
+  }
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, radius, 5, false);
+}
+
 export class Obstacles {
   private gates: Gate[] = [];
+  private underwater = false;
   private balloons: Balloon[] = [];
   private nextGateX = 0;
   private nextHazardX = 0;
@@ -216,8 +232,37 @@ export class Obstacles {
     map: glowTexture(), color: 0xffa040, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
   });
 
+  // Jellyfish parts
+  private bellGeo = (() => {
+    const pts: THREE.Vector2[] = [];
+    // Dome with a slightly flared, scalloped-looking rim
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const a = t * Math.PI * 0.5;
+      pts.push(new THREE.Vector2(Math.sin(a) * ENV_R * (1 + 0.08 * t * t), Math.cos(a) * ENV_RY * 0.85 - ENV_RY * 0.25));
+    }
+    pts.push(new THREE.Vector2(ENV_R * 0.92, -ENV_RY * 0.32));
+    return new THREE.LatheGeometry(pts, 40);
+  })();
+  private innerGeo = new THREE.SphereGeometry(ENV_R * 0.55, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.9, 1);
+  private tentacleGeo = strandGeometry(-BASKET_Y + 2, 0.09, 3);
+  private armGeo = strandGeometry(-BASKET_Y * 0.65, 0.32, 1.5);
+  private jellyMats = JELLY_COLOURS.map((c) => ({
+    bell: new THREE.MeshStandardMaterial({
+      color: c, emissive: c, emissiveIntensity: 0.35, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false,
+    }),
+    inner: new THREE.MeshBasicMaterial({ color: new THREE.Color(c).lerp(new THREE.Color(0xffffff), 0.5), transparent: true, opacity: 0.5, depthWrite: false }),
+    strand: new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.5, transparent: true, opacity: 0.75 }),
+    glow: c,
+  }));
+
   constructor(private scene: THREE.Scene) {
     this.reset();
+  }
+
+  /** Jellyfish instead of hot-air balloons. Applies to the next ones spawned. */
+  setUnderwater(on: boolean) {
+    this.underwater = on;
   }
 
   /** More of everything on each map. */
@@ -290,11 +335,22 @@ export class Obstacles {
       // Slow rise and fall: you have to pick your moment
       p.y = b.baseY + Math.sin(t * 0.7 + b.phase) * 4.5;
       p.x -= 1.5 * dt;
-      b.flame.material.opacity = 0.6 + Math.random() * 0.4;
-      b.flame.scale.setScalar(1.6 + Math.random() * 0.5);
       b.wobble = Math.max(0, b.wobble - dt * 1.2);
       const w = Math.sin(t * 14) * b.wobble * 0.12;
-      b.envelope.scale.set(1 + w, 1 - w, 1 + w);
+      if (b.tentacles) {
+        // Bell squeezes and relaxes; tentacles trail and sway
+        const pulse = Math.max(0, Math.sin(t * 2.2 + b.phase)) * 0.12;
+        b.envelope.scale.set(1 - pulse + w, 1 + pulse * 0.6 - w, 1 - pulse + w);
+        b.flame.material.opacity = 0.35 + pulse * 3;
+        b.tentacles.forEach((m, k) => {
+          m.rotation.x = Math.sin(t * 1.6 + k + b.phase) * 0.12;
+          m.rotation.z = Math.cos(t * 1.3 + k * 1.7 + b.phase) * 0.12;
+        });
+      } else {
+        b.flame.material.opacity = 0.6 + Math.random() * 0.4;
+        b.flame.scale.setScalar(1.6 + Math.random() * 0.5);
+        b.envelope.scale.set(1 + w, 1 - w, 1 + w);
+      }
       if (!b.hit && this.hitsBalloon(p, x, y, z)) {
         b.hit = true;
         b.wobble = 1;
@@ -398,7 +454,45 @@ export class Obstacles {
     g.curtain.dispose();
   }
 
+  private spawnJelly(x: number, planeY: number) {
+    const group = new THREE.Group();
+    const mats = this.jellyMats[Math.floor(Math.random() * this.jellyMats.length)];
+    const envelope = new THREE.Mesh(this.bellGeo, mats.bell);
+    envelope.add(new THREE.Mesh(this.innerGeo, mats.inner));
+    group.add(envelope);
+    const tentacles: THREE.Mesh[] = [];
+    const rimY = -ENV_RY * 0.3;
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const m = new THREE.Mesh(this.tentacleGeo, mats.strand);
+      m.position.set(Math.cos(a) * ENV_R * 0.8, rimY, Math.sin(a) * ENV_R * 0.8);
+      m.rotation.y = a;
+      group.add(m);
+      tentacles.push(m);
+    }
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      const m = new THREE.Mesh(this.armGeo, mats.strand);
+      m.position.set(Math.cos(a) * 0.8, rimY, Math.sin(a) * 0.8);
+      m.rotation.y = a;
+      group.add(m);
+      tentacles.push(m);
+    }
+    const glow = new THREE.Sprite(this.flameMat.clone());
+    glow.material.color.setHex(mats.glow);
+    glow.scale.setScalar(9);
+    glow.position.y = 1;
+    group.add(glow);
+
+    const baseY = clamp(planeY - 3 + (Math.random() - 0.5) * 10, -BASKET_Y + 6, CEILING - 12);
+    group.position.set(x, baseY, (Math.random() - 0.5) * 2);
+    group.rotation.y = Math.random() * Math.PI * 2;
+    this.scene.add(group);
+    this.balloons.push({ group, envelope, flame: glow, tentacles, baseY, phase: Math.random() * 6, wobble: 0, hit: false });
+  }
+
   private spawnBalloon(x: number, planeY: number) {
+    if (this.underwater) return this.spawnJelly(x, planeY);
     const group = new THREE.Group();
     const envelope = new THREE.Mesh(this.envGeo, this.envMats[Math.floor(Math.random() * this.envMats.length)]);
     group.add(envelope);

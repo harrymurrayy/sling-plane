@@ -1,4 +1,5 @@
-export type TreeKind = 'pine' | 'snowPine' | 'broadleaf' | 'cactus' | 'rock' | 'deadTree' | 'lollipop' | 'cottonCandy' | 'mushroom';
+export type TreeKind = 'pine' | 'snowPine' | 'broadleaf' | 'cactus' | 'rock' | 'deadTree' | 'lollipop' | 'cottonCandy' | 'mushroom'
+  | 'kelp' | 'coral' | 'brainCoral';
 
 export interface Biome {
   id: string;
@@ -22,6 +23,8 @@ export interface Biome {
   trees: TreeKind[];
   /** Rainbows arching over the horizon. */
   rainbows?: boolean;
+  /** Under the sea: bubbles, light rays, sea creatures instead of balloons. */
+  underwater?: boolean;
 }
 
 // Visual themes. Each one hosts several levels (see LEVELS below).
@@ -106,6 +109,23 @@ export const BIOMES: Biome[] = [
     foliage: [0x3a3434, 0x4a3e3a, 0x2a2222],
     trees: ['rock', 'deadTree', 'rock'],
   },
+  {
+    id: 'reef',
+    name: 'Coral Reef',
+    coinBonus: 1.5,
+    accent: 0x2ee6d6,
+    skyTop: 0x0b4f8f,
+    horizon: 0x3fb8c8,
+    mountains: [0x2f93a8, 0x237a90],
+    hemi: [0xc8fbff, 0x2f6a78],
+    sun: 0xe0fcff,
+    cloud: 0xbff4ff,
+    ground: { base: '#e2cf98', patches: ['rgba(200,176,120,0.5)', 'rgba(246,230,180,0.45)'], specks: ['rgba(255,140,150,0.4)', 'rgba(255,255,240,0.45)'] },
+    trunk: 0x3f8a4a,
+    foliage: [0xff6f91, 0xff9f4a, 0xb57cff, 0xffd84a, 0x4fd6c8],
+    trees: ['kelp', 'coral', 'kelp', 'brainCoral', 'coral', 'rock'],
+    underwater: true,
+  },
 ];
 
 export interface Level extends Biome {
@@ -124,9 +144,10 @@ export interface Level extends Biome {
 export const LEVELS_PER_BIOME = 5;
 
 // Finish lines fitted to the progression sim: each sits just past the range a typical player
-// has after the planned play time (about 1 min for level 1, rising to ~7 min by level 25).
-const TARGETS = [250, 550, 700, 800, 1050, 1250, 1400, 1450, 1500, 1550, 1600, 1650, 1700,
-  1850, 1900, 2000, 2050, 2100, 2150, 2250, 2300, 2400, 2450, 2650, 2700];
+// has after the planned play time (about 1 min for level 1, rising to ~4 min by level 30).
+// The last one stays well inside a maxed plane's ~3.8 km so it never needs a flawless run.
+const TARGETS = [250, 550, 700, 950, 1150, 1200, 1300, 1350, 1450, 1550, 1600, 1700, 1850, 1950, 2050,
+  2150, 2300, 2450, 2600, 2700, 2750, 2800, 2850, 2900, 2950, 3050, 3100, 3150, 3250, 3300];
 export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
   Array.from({ length: LEVELS_PER_BIOME }, (_, k) => {
     const i = theme * LEVELS_PER_BIOME + k;
@@ -148,7 +169,7 @@ export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
 export const FREE: Level = {
   id: 'free',
   name: 'Unicorn Land',
-  coinBonus: 1.4,
+  coinBonus: 1.6,
   accent: 0xff6fd8,
   skyTop: 0x7fb2ff,
   horizon: 0xffd3f0,
