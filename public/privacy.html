@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Sling Plane · Privacy Policy</title>
   <style>
     :root { color-scheme: light dark; --bg: #f6f7fb; --fg: #1a1f3d; --muted: #5b6488; --card: #fff; --line: #e1e5f2; }
@@ -15,9 +15,13 @@
     .summary { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
     p, li { margin: 0 0 10px; }
     a { color: #2a7fff; }
+    .back { position: sticky; top: 0; z-index: 1; background: var(--bg); padding: calc(env(safe-area-inset-top) + 12px) 20px 12px; border-bottom: 1px solid var(--line); }
+    .back a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 600; text-decoration: none; }
+    main { padding-top: 24px; }
   </style>
 </head>
 <body>
+  <nav class="back"><a href="./" id="back">&larr; Back to game</a></nav>
   <main>
     <h1>Sling Plane Privacy Policy</h1>
     <p class="date">Last updated 1 November 2026</p>
@@ -42,5 +46,10 @@
     <h2>Contact</h2>
     <p>Questions about this policy can be raised at <a href="https://github.com/harrymurrayy/sling-plane/issues">github.com/harrymurrayy/sling-plane/issues</a>.</p>
   </main>
+  <script>
+    document.getElementById('back').addEventListener('click', (e) => {
+      if (history.length > 1 && document.referrer.startsWith(location.origin)) { e.preventDefault(); history.back(); }
+    });
+  </script>
 </body>
 </html>
