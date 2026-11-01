@@ -308,7 +308,8 @@ export class Scenery {
         }
       });
     }
-    this.goals.add(goalLine(finish, accent, `FINISH  ${finish.toLocaleString()}m`, true));
+    // Free flight has no finish, only your best to chase
+    if (Number.isFinite(finish)) this.goals.add(goalLine(finish, accent, `FINISH  ${finish.toLocaleString()}m`, true));
     if (best > 0 && best < finish) this.goals.add(goalLine(best, 0xffd60a, `BEST  ${best.toLocaleString()}m`, false));
   }
 

@@ -11,8 +11,8 @@ import { gustAt, makeAir, roughness, type Air } from './air';
 import { Pickups } from './pickups';
 import { Obstacles } from './obstacles';
 import { createPlaneMesh, type PlaneModel } from './planeModel';
-import { computeStats, partsOf, type Levels, type Upgrade } from './upgrades';
-import { BIOMES, LEVELS } from './biomes';
+import { UPGRADES, computeStats, partsOf, type Levels, type Upgrade } from './upgrades';
+import { BIOMES, FREE, LEVELS } from './biomes';
 import { LevelMap } from './levelmap';
 import { countStars, starReward, starRow, starsFrom, challengesFor } from './stars';
 import {
@@ -40,8 +40,10 @@ let bests = load<Record<string, number> | null>('bests', null);
 let best = 0;
 let wallet = load('coins', 0);
 let levels: Levels = load('levels', {});
-let levelIndex = Math.min(load('level', -1), LEVELS.length - 1);
-const level = () => LEVELS[levelIndex];
+// LEVELS.length is free flight, past the last level
+let levelIndex = Math.min(load('level', -1), LEVELS.length);
+const isFree = () => levelIndex === LEVELS.length;
+const level = () => (isFree() ? FREE : LEVELS[levelIndex]);
 if (!bests || levelIndex < 0) {
   // Saves from before the 25-level campaign: start at the first level of the biome you'd reached,
   // keep coins and upgrades
@@ -51,7 +53,9 @@ if (!bests || levelIndex < 0) {
   save('level', levelIndex);
 }
 // The furthest level you've reached; levelIndex is whichever one you've picked to fly
-let unlocked = Math.max(levelIndex, load('unlocked', levelIndex));
+let unlocked = Math.max(Math.min(levelIndex, LEVELS.length - 1), load('unlocked', 0));
+const LAST = LEVELS[LEVELS.length - 1];
+const freeUnlocked = () => (bests![LAST.id] ?? 0) >= LAST.target;
 // Stars per level as a bitmask (bit i = challenge i)
 let stars = load<Record<string, number>>('stars', {});
 const syncBest = () => (best = bests![level().id] ?? 0);
@@ -242,7 +246,7 @@ const hangar = new Hangar(hangarEl, {
   wallet: () => wallet,
   stats: () => stats,
   bests: () => bests!,
-  levelIndex: () => levelIndex,
+  levelIndex: () => Math.min(levelIndex, LEVELS.length - 1),
   career: () => career,
   buy(u: Upgrade) {
     const next = (levels[u.id] ?? 0) + 1;
@@ -263,9 +267,11 @@ const levelMap = new LevelMap(mapEl, {
   stars: () => stars,
   bests: () => bests!,
   unlocked: () => unlocked,
+  freeUnlocked,
   selected: () => levelIndex,
   select(i: number) {
-    if (i > unlocked || i === levelIndex) return;
+    const open = i <= unlocked || (i === LEVELS.length && freeUnlocked());
+    if (!open || i === levelIndex) return;
     levelIndex = i;
     save('level', levelIndex);
     syncBest();
@@ -275,12 +281,29 @@ const levelMap = new LevelMap(mapEl, {
   },
 });
 
-if (new URLSearchParams(location.search).has('dev')) {
+// Testing shortcuts, only on the local dev server
+if (import.meta.env.DEV) {
   $('dev').classList.remove('hidden');
   $('dev-coins').addEventListener('click', () => {
     wallet += 1000;
     save('coins', wallet);
     hangar.render();
+  });
+  // Console access for poking at a flight: game.flight.x = 650
+  Object.assign(window, { game: { get flight() { return flight; }, pickups } });
+  // Every upgrade maxed, every level cleared, straight into free flight
+  $('dev-free').addEventListener('click', () => {
+    levels = Object.fromEntries(UPGRADES.map((u) => [u.id, u.maxLevel]));
+    save('levels', levels);
+    for (const l of LEVELS) bests![l.id] = Math.max(bests![l.id] ?? 0, l.target);
+    save('bests', bests);
+    unlocked = LEVELS.length - 1;
+    levelIndex = LEVELS.length;
+    save('unlocked', unlocked);
+    save('level', levelIndex);
+    applyLevels();
+    updateTitle();
+    enterAim();
   });
 }
 
@@ -407,7 +430,7 @@ function enterAim() {
   hud.coins.textContent = wallet.toLocaleString();
   hud.dist.textContent = '0';
   showGoal(0);
-  hud.goalStars.innerHTML = starRow(stars[level().id] ?? 0);
+  hud.goalStars.innerHTML = isFree() ? '' : starRow(stars[level().id] ?? 0);
   // Control hints only while you're learning
   if (career.flights < 3) showHint('Hold, then release at the top');
   else hideHint();
@@ -474,6 +497,7 @@ function launch() {
   crashTimer = 0;
   air = makeAir(0.35 + 0.15 * level().difficulty);
   obstacles.setLevel(level().difficulty);
+  pickups.setFuel(isFree() && stats.fuel > 0);
   // Mid-flight the pill shows this run's running total (see showRunTotal)
   hud.coins.textContent = '+0';
   bestAtLaunch = best;
@@ -481,7 +505,7 @@ function launch() {
   runHits = 0;
   launchedPerfect = isPerfect();
   liveStars = 0;
-  hud.goalStars.innerHTML = starRow(0);
+  hud.goalStars.innerHTML = isFree() ? '' : starRow(0);
   hud.statsPill.classList.remove('record');
   hud.goal.classList.remove('cleared');
   showGoal(0);
@@ -568,10 +592,11 @@ function endRun() {
   $('result-starcoins').textContent = `+${starCoins}`;
   $('row-stars').classList.toggle('hidden', starCoins === 0);
   // This flight's stars; what it missed tells you what to fix next time
-  $('result-stars').innerHTML = starRow(liveStars, liveStars);
+  $('result-stars').innerHTML = isFree() ? '' : starRow(liveStars, liveStars);
   const missed = challengesFor(b).find((_, i) => !(liveStars & (1 << i)));
   const bestCount = countStars(stars[b.id] ?? 0);
-  $('result-next').textContent = !missed ? 'All three in one flight!'
+  $('result-next').textContent = isFree() ? (dist > best ? 'Furthest free flight yet' : `${(best - dist).toLocaleString()}m short of your best`)
+    : !missed ? 'All three in one flight!'
     : gained ? `Missed: ${missed.text}`
     : `Missed: ${missed.text} · Best ${bestCount}/3`;
 
@@ -580,23 +605,30 @@ function endRun() {
     best = bests![b.id] = dist;
     save('bests', bests);
   } else {
-    $('result-best').textContent = `Best on level ${b.n}: ${best.toLocaleString()}m`;
+    $('result-best').textContent = `${isFree() ? 'Free flight best' : `Best on level ${b.n}`}: ${best.toLocaleString()}m`;
   }
 
   // Finishing the furthest level unlocks the next one and moves you onto it. Replays of
   // earlier levels stay put so you can keep going for their stars.
   const next = reachedFinish && levelIndex === unlocked ? LEVELS[levelIndex + 1] : undefined;
   const newBiome = next && next.theme !== b.theme;
+  // First finish of the last level opens free flight and takes you there
+  const freeOpened = reachedFinish && b === LAST && bestAtLaunch < b.target;
   if (next) {
     levelIndex = ++unlocked;
     save('level', levelIndex);
     save('unlocked', unlocked);
     syncBest();
+  } else if (freeOpened) {
+    levelIndex = LEVELS.length;
+    save('level', levelIndex);
+    syncBest();
   }
   updateTitle();
-  $('result-unlock').classList.toggle('hidden', !next);
+  $('result-unlock').classList.toggle('hidden', !next && !freeOpened);
   if (next) $('result-unlock').innerHTML = `<b>${newBiome ? `${next.name} unlocked` : `Level ${next.n} unlocked`}</b><span>Finish line at ${next.target.toLocaleString()}m</span>`;
-  $('result-fly').textContent = next ? `Fly level ${next.n}` : 'Fly again';
+  else if (freeOpened) $('result-unlock').innerHTML = `<b>Free flight unlocked</b><span>No finish line. Grab fuel and go as far as you can</span>`;
+  $('result-fly').textContent = next ? `Fly level ${next.n}` : freeOpened ? 'Fly free' : 'Fly again';
   countUp($('result-dist'), 0, dist, 700);
   countUp($('result-total'), 0, earned, 900, '+');
   countUp($('result-wallet'), before, wallet, 900);
@@ -885,10 +917,12 @@ function emitFlightEffects() {
 function showGoal(x: number) {
   const b = level();
   const mark = state === 'flying' ? bestAtLaunch : best;
-  const markPos = Math.min(1, mark / b.target);
+  // Free flight's bar runs to your best instead of a finish line
+  const goal = isFree() ? Math.max(mark, 1000) : b.target;
+  const markPos = Math.min(1, mark / goal);
   hud.goal.style.setProperty('--accent', `#${b.accent.toString(16).padStart(6, '0')}`);
-  hud.goalName.innerHTML = `<b>Level ${b.n}</b> ${b.name}`;
-  hud.goalFill.style.width = `${Math.min(1, x / b.target) * 100}%`;
+  hud.goalName.innerHTML = isFree() ? `<b>Free flight</b> ${b.name}` : `<b>Level ${b.n}</b> ${b.name}`;
+  hud.goalFill.style.width = `${Math.min(1, x / goal) * 100}%`;
   hud.goalGhost.style.width = `${markPos * 100}%`;
   hud.goalBest.classList.toggle('hidden', mark <= 0);
   hud.goalBestLabel.classList.toggle('hidden', mark <= 0);
@@ -896,7 +930,9 @@ function showGoal(x: number) {
   // Label slides from left-aligned at the start to right-aligned at the finish, so it never spills out
   hud.goalBestLabel.style.transform = `translateX(-${markPos * 100}%)`;
   hud.goalBestLabel.textContent = `Best ${mark.toLocaleString()}m`;
-  hud.goalTarget.textContent = reachedFinish
+  hud.goalTarget.textContent = isFree()
+    ? state === 'flying' ? `${Math.floor(x).toLocaleString()}m` : 'No finish line'
+    : reachedFinish
     ? 'Finished'
     : state === 'flying'
       ? `${Math.floor(x).toLocaleString()} / ${b.target.toLocaleString()}m`
@@ -930,7 +966,7 @@ function trackGoals() {
   }
   if (passedBest) hud.best.textContent = Math.floor(x).toLocaleString();
   // Stars light up on the goal bar the moment you earn them
-  const lit = liveStars | starsFrom(b, { dist: x, finished: reachedFinish, coins: runCoins, rings: ringsHit, hits: runHits, perfect: launchedPerfect });
+  const lit = isFree() ? 0 : liveStars | starsFrom(b, { dist: x, finished: reachedFinish, coins: runCoins, rings: ringsHit, hits: runHits, perfect: launchedPerfect });
   if (lit !== liveStars) {
     hud.goalStars.innerHTML = starRow(lit, lit & ~liveStars);
     liveStars = lit;
@@ -942,6 +978,11 @@ function trackGoals() {
 
 function updateTitle() {
   const b = level();
+  if (isFree()) {
+    $('title-level').textContent = `Free flight · ${b.name}`;
+    $('title-best').textContent = best > 0 ? `Best ${best.toLocaleString()}m` : 'No finish line. How far can you go?';
+    return;
+  }
   $('title-level').textContent = `Level ${b.n} of ${LEVELS.length} · ${b.name}`;
   $('title-best').textContent = best > 0 ? `Best ${best.toLocaleString()}m of ${b.target.toLocaleString()}m` : `Finish line ${b.target.toLocaleString()}m`;
 }
@@ -978,6 +1019,16 @@ function frame(now: number) {
       sound.coin();
       vibrate(10);
     }
+    if (ev.fuel) {
+      // A can tops the engine up by a fifth of a tank and relights it if it had run dry
+      flight.fuel = Math.min(stats.fuel, flight.fuel + stats.fuel * 0.2);
+      sparks.burst(tmp, 50, 14, { color: 0xff8a3a, size: 0.6, life: 0.7, opacity: 1 });
+      edgeFlash('255, 138, 58');
+      sound.ring();
+      vibrate(40);
+    }
+    // Free flight gets busier the further you go
+    if (isFree()) obstacles.setLevel(Math.min(4, FREE.difficulty + flight.x / 2500));
     const ob = obstacles.update(flight.x, flight.y, flight.z, prevX, dt, (x0, x1) => pickups.clearSpan(x0, x1));
     if (ob.gate) {
       runCoins += 3;

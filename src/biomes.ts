@@ -141,3 +141,26 @@ export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
     };
   }),
 );
+
+/** Free flight: unlocked after the last level. No finish line, just your best, and fuel cans keep the engine going. */
+export const FREE: Level = {
+  id: 'free',
+  name: 'Sunset Coast',
+  coinBonus: 1.4,
+  accent: 0xff7ab8,
+  skyTop: 0x3b3a8f,
+  horizon: 0xffb48a,
+  mountains: [0xc98aa6, 0x8f5f8f],
+  hemi: [0xffe0cc, 0x3f4f5a],
+  sun: 0xffc08a,
+  cloud: 0xffd6e0,
+  ground: { base: '#5c9468', patches: ['rgba(70,130,90,0.5)', 'rgba(240,200,140,0.35)'], specks: ['rgba(40,90,70,0.35)', 'rgba(255,170,150,0.3)'] },
+  trunk: 0x5a3a3a,
+  foliage: [0x2f7a6a, 0x3f8f6a, 0xd9708f, 0x8f5fa8],
+  trees: ['broadleaf', 'pine', 'rock'],
+  n: LEVELS.length + 1,
+  theme: BIOMES.length,
+  difficulty: 2,
+  target: Infinity,
+  reward: 0,
+};

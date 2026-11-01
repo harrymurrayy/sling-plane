@@ -6,12 +6,21 @@ const RING_RADIUS = 4.5;
 // Forgiving hit zone: clipping the outside of the ring still counts
 const RING_HIT = RING_RADIUS + 3;
 const COIN_RADIUS = 2.4; // collection distance
+const FUEL_RADIUS = 4; // generous: you have to plan your height to reach a can, not thread it
+
+// Free flight fuel cans: the first comes early, then each gap is longer than the last,
+// so even a perfect flight eventually runs dry
+const FUEL_FIRST = 700;
+const FUEL_GAP = 450;
+const FUEL_GAP_GROWTH = 1.2;
 
 export interface PickupEvents {
   coins: number;
   /** 0 = no ring; otherwise the boost quality (bullseye 1.8, clean 1, edge clip 0.5). */
   boost: number;
   bullseye: boolean;
+  /** Picked up a fuel can (free flight only). */
+  fuel: boolean;
 }
 
 const CYAN = 0x48e5ff;
@@ -90,6 +99,10 @@ interface Ring {
 export class Pickups {
   private rings: Ring[] = [];
   private coins: THREE.Mesh[] = [];
+  private cans: THREE.Group[] = [];
+  private fuelOn = false;
+  private nextCanX = 0;
+  private canGap = 0;
   private nextRingX = 0;
   private nextCoinX = 0;
   private time = 0;
@@ -110,6 +123,16 @@ export class Pickups {
     map: glowTexture(), color: 0xffd65a, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false,
   });
 
+  private canBodyMat = new THREE.MeshStandardMaterial({ color: 0xff3b30, metalness: 0.3, roughness: 0.4 });
+  private canTrimMat = new THREE.MeshStandardMaterial({ color: 0xffd23a, metalness: 0.6, roughness: 0.3 });
+  private canBodyGeo = roundedBox(1.6, 2.1, 0.8, 0.22);
+  private canHandleGeo = new THREE.TorusGeometry(0.32, 0.1, 8, 20, Math.PI);
+  private canCapGeo = new THREE.CylinderGeometry(0.2, 0.24, 0.35, 16);
+  private canBandGeo = new THREE.BoxGeometry(1.64, 0.18, 0.84);
+  private canGlow = new THREE.SpriteMaterial({
+    map: this.coinGlow.map, color: 0xff8a3a, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+
   constructor(private scene: THREE.Scene) {
     this.reset();
   }
@@ -117,10 +140,19 @@ export class Pickups {
   reset() {
     for (const r of this.rings) this.removeRing(r);
     for (const c of this.coins) this.scene.remove(c);
+    for (const c of this.cans) this.scene.remove(c);
     this.rings = [];
     this.coins = [];
+    this.cans = [];
+    this.nextCanX = FUEL_FIRST;
+    this.canGap = FUEL_GAP;
     this.nextRingX = 150;
     this.nextCoinX = 35;
+  }
+
+  /** Free flight scatters fuel cans along the route. */
+  setFuel(on: boolean) {
+    this.fuelOn = on;
   }
 
   /** Remove anything spawned in [x0, x1] so obstacles get a clear run-up. */
@@ -134,11 +166,12 @@ export class Pickups {
       const inside = c.position.x > x0 && c.position.x < x1;
       if (inside) this.scene.remove(c);
       return !inside;
-    });
+    });    // Fuel is too precious to delete: slide the can out past the obstacle instead
+    for (const c of this.cans) if (c.position.x > x0 - 10 && c.position.x < x1 + 10) c.position.x = x1 + 25;
   }
 
   update(x: number, y: number, z: number, prevX: number, dt: number, magnetRadius: number): PickupEvents {
-    const events: PickupEvents = { coins: 0, boost: 0, bullseye: false };
+    const events: PickupEvents = { coins: 0, boost: 0, bullseye: false, fuel: false };
 
     while (this.nextRingX < x + 350) {
       this.spawnRing(this.nextRingX, y);
@@ -149,7 +182,29 @@ export class Pickups {
       this.nextCoinX += 40 + Math.random() * 50;
     }
 
+    while (this.fuelOn && this.nextCanX < x + 400) {
+      this.spawnCan(this.nextCanX, y);
+      this.nextCanX += this.canGap * (0.85 + Math.random() * 0.3);
+      this.canGap *= FUEL_GAP_GROWTH;
+    }
+
     this.time += dt;
+    this.cans = this.cans.filter((c) => {
+      c.rotation.y += 1.5 * dt;
+      const p = c.position;
+      // Swept along the flight path so a fast plane can't skip over one between frames
+      const crossed = prevX < p.x + FUEL_RADIUS && x > p.x - FUEL_RADIUS;
+      if (crossed && Math.hypot(y - p.y, z - p.z) < FUEL_RADIUS) {
+        events.fuel = true;
+        this.scene.remove(c);
+        return false;
+      }
+      if (p.x < x - 30) {
+        this.scene.remove(c);
+        return false;
+      }
+      return true;
+    });
     this.rings = this.rings.filter((r) => {
       const p = r.group.position;
       const off = Math.hypot(y - p.y, z - p.z);
@@ -247,6 +302,31 @@ export class Pickups {
     this.rings.push({ group, field, spinners, used: false });
   }
 
+  private spawnCan(x: number, nearY: number) {
+    const can = new THREE.Group();
+    can.add(new THREE.Mesh(this.canBodyGeo, this.canBodyMat));
+    for (const y of [-0.55, 0.55]) {
+      const band = new THREE.Mesh(this.canBandGeo, this.canTrimMat);
+      band.position.y = y;
+      can.add(band);
+    }
+    const handle = new THREE.Mesh(this.canHandleGeo, this.canTrimMat);
+    handle.position.set(-0.3, 1.05, 0);
+    can.add(handle);
+    const cap = new THREE.Mesh(this.canCapGeo, this.canTrimMat);
+    cap.position.set(0.5, 1.2, 0);
+    cap.rotation.z = -0.5;
+    can.add(cap);
+    const glow = new THREE.Sprite(this.canGlow);
+    glow.scale.setScalar(7);
+    can.add(glow);
+    can.scale.setScalar(1.7);
+    // Wider spread than coins: reaching a can means spending or saving height for it
+    can.position.set(x, spawnHeight(nearY, 34), 0);
+    this.scene.add(can);
+    this.cans.push(can);
+  }
+
   private removeRing(r: Ring) {
     this.scene.remove(r.group);
     r.field.dispose();
@@ -275,4 +355,21 @@ export class Pickups {
 function spawnHeight(planeY: number, spread: number): number {
   const centre = Math.max(planeY, spread / 2 + 4);
   return THREE.MathUtils.clamp(centre + (Math.random() - 0.5) * spread, 4, CEILING - 8);
+}
+
+/** Box with rounded vertical edges, for the fuel can body. */
+function roundedBox(w: number, h: number, d: number, r: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  const x = w / 2 - r, y = d / 2 - r;
+  shape.moveTo(-x, -d / 2);
+  shape.lineTo(x, -d / 2);
+  shape.quadraticCurveTo(w / 2, -d / 2, w / 2, -y);
+  shape.lineTo(w / 2, y);
+  shape.quadraticCurveTo(w / 2, d / 2, x, d / 2);
+  shape.lineTo(-x, d / 2);
+  shape.quadraticCurveTo(-w / 2, d / 2, -w / 2, y);
+  shape.lineTo(-w / 2, -y);
+  shape.quadraticCurveTo(-w / 2, -d / 2, -x, -d / 2);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 2 });
+  return geo.rotateX(-Math.PI / 2).translate(0, -h / 2, 0);
 }

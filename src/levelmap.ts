@@ -1,4 +1,4 @@
-import { BIOMES, LEVELS } from './biomes';
+import { BIOMES, FREE, LEVELS } from './biomes';
 import { STAR, challengesFor, countStars, starRow, starReward } from './stars';
 
 export interface MapHooks {
@@ -6,11 +6,14 @@ export interface MapHooks {
   bests(): Record<string, number>;
   /** Highest level index you can play. */
   unlocked(): number;
+  /** Cleared the last level: free flight is open (it sits at index LEVELS.length). */
+  freeUnlocked(): boolean;
   /** Level index the next flight uses. */
   selected(): number;
   select(index: number): void;
 }
 
+const FUEL = `<svg class="icon fuel-icon" viewBox="0 0 24 24"><path d="M6 6h9l3 3v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z"/><path d="M8 3h5v3H8z"/></svg>`;
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 const LOCK = `<svg class="icon" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
 
@@ -40,6 +43,18 @@ export class LevelMap {
     this.listEl.querySelector('.node.selected')?.closest('section')?.scrollIntoView({ block: 'center' });
   }
 
+  /** Free flight's postcard after the last biome: one big node, locked until the campaign is done. */
+  private freeCard(sel: number, best: number): string {
+    const open = this.hooks.freeUnlocked();
+    const i = LEVELS.length;
+    return `<section class="map-biome free ${open ? '' : 'locked'}" style="--sky:${hex(FREE.skyTop)};--haze:${hex(FREE.horizon)};--hill:${hex(FREE.mountains[1])};--ground:${FREE.ground.base};--accent:${hex(FREE.accent)}">
+        <header><h3>Free flight</h3><span class="biome-stars">${open ? (best > 0 ? `Best ${best.toLocaleString()}m` : 'Open') : 'Clear level 25'}</span></header>
+        <div class="map-path"><button class="node free-node ${open ? 'open' : 'locked'} ${sel === i ? 'selected' : ''}" data-level="${i}" ${open ? '' : 'disabled'} aria-label="Free flight">
+          <span class="node-disc">${open ? '∞' : LOCK}</span>
+        </button></div>
+      </section>`;
+  }
+
   render(fresh = false) {
     const stars = this.hooks.stars();
     const bests = this.hooks.bests();
@@ -67,7 +82,24 @@ export class LevelMap {
         <header><h3>${b.name}</h3><span class="biome-stars">${STAR.replace('class="star"', 'class="star on"')}${got}/${levels.length * 3}</span></header>
         <div class="map-path">${nodes}</div>
       </section>`;
-    }).join('');
+    }).join('') + this.freeCard(sel, bests[FREE.id] ?? 0);
+
+    const fly = document.getElementById('map-fly')!;
+    if (sel === LEVELS.length) {
+      const best = bests[FREE.id] ?? 0;
+      this.detailEl.innerHTML = `<div class="map-card">
+          <div class="map-card-head">
+            <div><div class="map-card-title">Free flight</div><div class="map-card-sub">${FREE.name} · No finish line</div></div>
+            <div class="map-card-best">${best > 0 ? `<span>Best</span><b>${best.toLocaleString()}m</b>` : '<span>Not flown yet</span>'}</div>
+          </div>
+          <ul class="challenges free-rules">
+            <li>${FUEL}<span>Grab fuel cans to keep your engine running</span></li>
+            <li>${STAR.replace('class="star"', 'class="star on"')}<span>Each can is further away than the last. Beat your best.</span></li>
+          </ul>
+        </div>`;
+      fly.textContent = 'Fly free';
+      return;
+    }
 
     // The picked level: its challenges, which stars you have, your best
     const l = LEVELS[sel];
@@ -85,7 +117,6 @@ export class LevelMap {
         <ul class="challenges">${rows}</ul>
         <div class="challenge-note">Stars count from your best single flight</div>
       </div>`;
-    const fly = document.getElementById('map-fly')!;
     fly.textContent = `Fly level ${l.n}`;
   }
 }
