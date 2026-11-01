@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   ios: {
     // The game draws edge to edge; the CSS handles the notch and home bar
     contentInset: 'never',
-    backgroundColor: '#27306a',
+    backgroundColor: '#3d8fe0',
   },
 };
 

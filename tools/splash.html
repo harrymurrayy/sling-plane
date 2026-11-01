@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Splash render</title>
+<style>
+  html, body { margin: 0; width: 1366px; height: 1366px; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 1366px; height: 1366px; }
+  .logo {
+    position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%) rotate(-4deg);
+    font: 112px/1 'Lilita One', sans-serif; color: #ffe14d; white-space: nowrap;
+    -webkit-text-stroke: 12px #1a1f3d; text-shadow: 0 7px 0 #1a1f3d, 0 14px 28px rgba(10, 20, 70, 0.35);
+  }
+  .logo::after {
+    content: attr(data-text); position: absolute; inset: 0;
+    background: linear-gradient(180deg, #fffbd0 0 28%, #ffe14d 29% 58%, #ff9d1f 59%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-stroke: 0; text-shadow: none;
+  }
+</style>
+</head>
+<body>
+<canvas width="2732" height="2732"></canvas>
+<div class="logo" data-text="Slingwing">Slingwing</div>
+<script type="module">
+  import '@fontsource/lilita-one/400.css';
+  import { background } from './sky.ts';
+  const c = document.querySelector('canvas');
+  const ctx = c.getContext('2d');
+  ctx.scale(2732 / 1024, 2732 / 1024);
+  background(ctx, new URLSearchParams(location.search).get('v') ?? 'light');
+  await document.fonts.ready;
+  window.ready = true;
+</script>
+</body>
+</html>
