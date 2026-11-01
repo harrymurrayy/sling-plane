@@ -329,7 +329,7 @@ if (import.meta.env.DEV) {
     hangar.render();
   });
   // Console access for poking at a flight: game.flight.x = 650
-  Object.assign(window, { game: { get flight() { return flight; }, pickups } });
+  Object.assign(window, { game: { get flight() { return flight; }, pickups, renderer, scene } });
   // Every upgrade maxed, every level cleared, straight into free flight
   $('dev-free').addEventListener('click', () => {
     levels = Object.fromEntries(UPGRADES.map((u) => [u.id, u.maxLevel]));

@@ -187,6 +187,62 @@ export function followGround(ground: THREE.Mesh, x: number, z: number): void {
   tex.offset.set(sx / tile, -sz / tile);
 }
 
+/**
+ * Draws many copies of the same kinds of object with one draw call per part.
+ * Each item is a plain Group of meshes that never joins the scene; its meshes become
+ * instances, so moving an item is setting its transform then calling sync(i).
+ */
+class InstancedSet {
+  readonly meshes: THREE.InstancedMesh[] = [];
+  private parts: { mesh: THREE.InstancedMesh; index: number; local: THREE.Matrix4 }[][] = [];
+  private tmp = new THREE.Matrix4();
+
+  constructor(private scene: THREE.Scene, readonly items: THREE.Object3D[], castShadow: boolean) {
+    const batches = new Map<string, { geo: THREE.BufferGeometry; mat: THREE.Material; slots: { item: number; local: THREE.Matrix4 }[] }>();
+    const spare = new Set<THREE.Material>();
+    items.forEach((item, i) => {
+      this.parts.push([]);
+      for (const m of item.children) {
+        if (!(m instanceof THREE.Mesh)) continue;
+        const mat = m.material as THREE.MeshLambertMaterial;
+        const key = `${m.geometry.uuid}|${mat.color?.getHexString()}|${mat.flatShading}|${mat.transparent}`;
+        let b = batches.get(key);
+        if (!b) batches.set(key, (b = { geo: m.geometry, mat, slots: [] }));
+        else if (b.mat !== mat) spare.add(mat);
+        m.updateMatrix();
+        b.slots.push({ item: i, local: m.matrix.clone() });
+      }
+    });
+    for (const mat of spare) mat.dispose();
+    for (const b of batches.values()) {
+      const mesh = new THREE.InstancedMesh(b.geo, b.mat, b.slots.length);
+      mesh.castShadow = castShadow;
+      mesh.frustumCulled = false; // instances roam the whole course
+      b.slots.forEach((slot, index) => this.parts[slot.item].push({ mesh, index, local: slot.local }));
+      scene.add(mesh);
+      this.meshes.push(mesh);
+    }
+  }
+
+  sync(i: number) {
+    const item = this.items[i];
+    item.updateMatrix();
+    for (const p of this.parts[i]) {
+      p.mesh.setMatrixAt(p.index, this.tmp.multiplyMatrices(item.matrix, p.local));
+      p.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /** Removes the instanced meshes; shared geometries stay alive for the next biome. */
+  dispose(disposeMaterials: boolean) {
+    for (const m of this.meshes) {
+      this.scene.remove(m);
+      if (disposeMaterials) (m.material as THREE.Material).dispose();
+      m.dispose();
+    }
+  }
+}
+
 interface Tree {
   obj: THREE.Group;
   radius: number;
@@ -202,6 +258,7 @@ const snowCapGeos = [new THREE.ConeGeometry(1.0, 1.0, 8), new THREE.ConeGeometry
 const blobGeo = new THREE.IcosahedronGeometry(1.7, 1);
 const cactusGeo = new THREE.CapsuleGeometry(0.45, 3.2, 4, 10);
 const armGeo = new THREE.CapsuleGeometry(0.3, 1.1, 4, 8);
+const elbowGeo = new THREE.CapsuleGeometry(0.3, 0.85, 4, 8);
 const rockGeo = new THREE.DodecahedronGeometry(1.4, 0);
 const branchGeo = new THREE.CylinderGeometry(0.08, 0.14, 1.8, 6);
 // Unicorn Land sweets
@@ -253,7 +310,9 @@ function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group;
         if (Math.random() < 0.3) continue;
         const h = 1.6 + Math.random() * 1.2;
         add(armGeo, mat, 0, h, side * 0.75);
-        add(new THREE.CapsuleGeometry(0.3, 0.6 + Math.random() * 0.5, 4, 8), mat, 0, h + 0.7, side * 0.45).rotation.x = side * 0.6;
+        const elbow = add(elbowGeo, mat, 0, h + 0.7, side * 0.45);
+        elbow.rotation.x = side * 0.6;
+        elbow.scale.y = 0.85 + Math.random() * 0.3;
       }
       return { obj, radius: 0.9, height: 4.1 };
     }
@@ -308,6 +367,8 @@ function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group;
 /** Recycled trees, clouds and distance markers around the plane. */
 export class Scenery {
   private trees: Tree[] = [];
+  private treeSet: InstancedSet | null = null;
+  private cloudSet: InstancedSet;
   /** Fewer on lower graphics settings; applies on the next setBiome. */
   treeCount = 160;
   private clouds: THREE.Group[] = [];
@@ -329,27 +390,21 @@ export class Scenery {
         m.scale.set(s * 1.3, s * 0.8, s);
         c.add(m);
       }
-      scene.add(c);
       this.clouds.push(c);
     }
+    this.cloudSet = new InstancedSet(scene, this.clouds, false);
     scene.add(this.goals);
   }
 
   /** Swap every tree for the biome's flora and recolour the clouds. */
   setBiome(biome: Biome) {
-    for (const t of this.trees) {
-      this.scene.remove(t.obj);
-      t.obj.traverse((o) => {
-        if (o instanceof THREE.Mesh) (o.material as THREE.Material).dispose();
-      });
-    }
+    this.treeSet?.dispose(true);
     this.trees = [];
     for (let i = 0; i < this.treeCount; i++) {
       const { obj, radius, height } = buildTree(biome.trees[i % biome.trees.length], biome, i);
-      obj.traverse((o) => (o.castShadow = true));
-      this.scene.add(obj);
       this.trees.push({ obj, radius, height, baseRadius: radius, baseHeight: height });
     }
+    this.treeSet = new InstancedSet(this.scene, this.trees.map((t) => t.obj), true);
     this.cloudMat.color.set(biome.cloud);
     this.reset();
   }
@@ -372,7 +427,8 @@ export class Scenery {
     if (best > 0 && best < finish) this.goals.add(goalLine(best, 0xffd60a, `BEST  ${best.toLocaleString()}m`, false));
   }
 
-  private placeTree(t: Tree, x: number, nearZ: number) {
+  private placeTree(i: number, x: number, nearZ: number) {
+    const t = this.trees[i];
     let z = nearZ + (Math.random() - 0.5) * 300;
     // Keep the launch runway clear
     if (x < 90 && Math.abs(z) < 12) z += Math.sign(z || 1) * 16;
@@ -383,21 +439,24 @@ export class Scenery {
     t.radius = t.baseRadius * s;
     t.height = t.baseHeight * s;
     t.hit = false;
+    this.treeSet?.sync(i);
   }
 
-  private placeCloud(c: THREE.Group, x: number, nearZ: number) {
+  private placeCloud(i: number, x: number, nearZ: number) {
+    const c = this.clouds[i];
     c.position.set(x, 55 + Math.random() * 60, nearZ + (Math.random() - 0.5) * 600);
     c.scale.setScalar(0.8 + Math.random() * 0.8);
+    this.cloudSet.sync(i);
   }
 
   update(x: number, z: number) {
-    for (const t of this.trees) {
+    this.trees.forEach((t, i) => {
       const p = t.obj.position;
-      if (p.x < x - 50 || Math.abs(p.z - z) > 170) this.placeTree(t, x + 380 + Math.random() * 80, z);
-    }
-    for (const c of this.clouds) {
-      if (c.position.x < x - 120 || Math.abs(c.position.z - z) > 330) this.placeCloud(c, x + 550 + Math.random() * 150, z);
-    }
+      if (p.x < x - 50 || Math.abs(p.z - z) > 170) this.placeTree(i, x + 380 + Math.random() * 80, z);
+    });
+    this.clouds.forEach((c, i) => {
+      if (c.position.x < x - 120 || Math.abs(c.position.z - z) > 330) this.placeCloud(i, x + 550 + Math.random() * 150, z);
+    });
 
     for (const [d, m] of this.markers) {
       if (d < x - 60) {
@@ -440,8 +499,8 @@ export class Scenery {
   }
 
   reset() {
-    for (const t of this.trees) this.placeTree(t, -40 + Math.random() * 500, 0);
-    for (const c of this.clouds) this.placeCloud(c, -100 + Math.random() * 750, 0);
+    this.trees.forEach((_, i) => this.placeTree(i, -40 + Math.random() * 500, 0));
+    this.clouds.forEach((_, i) => this.placeCloud(i, -100 + Math.random() * 750, 0));
     for (const m of this.markers.values()) this.scene.remove(m);
     this.markers.clear();
   }
