@@ -528,7 +528,7 @@ body:has(.screen:not(.hidden)) #settings-btn, body.flying #settings-btn { displa
   line-height: 1;
   color: var(--yellow);
   -webkit-text-stroke: 12px var(--ink);
-  text-shadow: 0 7px 0 var(--ink), 0 14px 28px rgba(10, 20, 70, 0.35);
+  text-shadow: 0 7px 0 var(--ink);
   transform: rotate(-4deg);
   animation: logo-in 0.7s var(--ease-pop), logo-bob 3.2s ease-in-out 0.7s infinite;
 }
