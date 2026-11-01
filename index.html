@@ -22,7 +22,7 @@
       </div>
     </div>
     <div id="goal" class="ui hidden">
-      <div class="goal-head"><span id="goal-name"></span><span id="goal-target"></span></div>
+      <div class="goal-head"><span id="goal-name"></span><span id="goal-stars" class="mini-stars"></span><span id="goal-target"></span></div>
       <div class="goal-track">
         <div id="goal-ghost"></div>
         <div id="goal-fill"></div>
@@ -38,6 +38,7 @@
     <div id="altimeter" class="hidden"></div>
     <button id="boost-btn" class="btn btn-orange hidden"><span>Boost</span><div class="bar"><div id="rocket-fill"></div></div></button>
     <button id="hangar-btn" class="btn btn-blue hidden"><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Hangar<span id="hangar-badge" class="badge hidden"></span></button>
+    <button id="map-btn" class="btn btn-yellow hidden"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2.6l2.85 5.95 6.55.85-4.8 4.55 1.2 6.5L12 17.3l-5.8 3.15 1.2-6.5-4.8-4.55 6.55-.85z"/></svg>Levels</button>
     <div id="hint" class="ui"></div>
 
     <div id="title">
@@ -52,6 +53,8 @@
         <div class="ribbon">Distance</div>
         <div class="big"><span id="result-dist">0</span><small>m</small></div>
         <div id="result-best" class="label"></div>
+        <div id="result-stars" class="result-stars"></div>
+        <div id="result-next" class="result-next"></div>
         <div id="result-unlock" class="unlock hidden"></div>
         <div class="rows">
           <div><span>Distance bonus</span><span id="result-distcoins">0</span></div>
@@ -60,17 +63,21 @@
           <div id="row-biome"><span id="result-biome-name">Biome bonus</span><span id="result-biome">×1</span></div>
           <div id="row-record"><span>Record bonus</span><span id="result-record">+0</span></div>
           <div id="row-checkpoint"><span>Level complete</span><span id="result-checkpoint">+0</span></div>
+          <div id="row-stars"><span>New stars</span><span id="result-starcoins">+0</span></div>
           <div class="total"><span>Earned</span><span><span class="coin-icon"></span><span id="result-total">0</span></span></div>
         </div>
         <div class="wallet-row"><span>Wallet</span><span class="coin-icon"></span><span id="result-wallet">0</span></div>
         <div class="buttons">
-          <button id="result-hangar" class="btn btn-blue"><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Hangar<span id="result-badge" class="badge hidden"></span></button>
+          <div class="button-row">
+            <button id="result-hangar" class="btn btn-blue"><svg class="icon" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>Hangar<span id="result-badge" class="badge hidden"></span></button>
+            <button id="result-map" class="btn btn-yellow"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2.6l2.85 5.95 6.55.85-4.8 4.55 1.2 6.5L12 17.3l-5.8 3.15 1.2-6.5-4.8-4.55 6.55-.85z"/></svg>Levels</button>
+          </div>
           <button id="result-fly" class="btn btn-green">Fly again</button>
         </div>
       </div>
     </div>
 
-    <div id="hangar" class="hidden">
+    <div id="hangar" class="screen hidden">
       <div class="hangar-screen">
         <header class="hangar-top">
           <div class="hangar-name">
@@ -85,6 +92,22 @@
           <div id="dev" class="hidden"><button id="dev-coins" class="btn btn-small btn-blue">+1000</button></div>
           <button id="reset-progress" class="btn btn-small btn-plain">Reset progress</button>
           <button id="hangar-fly" class="btn btn-green">Fly</button>
+        </footer>
+      </div>
+    </div>
+    <div id="map" class="screen hidden">
+      <div class="hangar-screen">
+        <header class="hangar-top">
+          <div class="hangar-name">
+            <div class="title">Levels</div>
+            <div class="hangar-sub map-sub"></div>
+          </div>
+          <div class="wallet ui"><svg class="icon star-icon" viewBox="0 0 24 24"><path d="M12 2.6l2.85 5.95 6.55.85-4.8 4.55 1.2 6.5L12 17.3l-5.8 3.15 1.2-6.5-4.8-4.55 6.55-.85z"/></svg><span class="map-total">0</span></div>
+        </header>
+        <div class="map-list"></div>
+        <footer class="map-bottom">
+          <div class="map-detail"></div>
+          <button id="map-fly" class="btn btn-green">Fly</button>
         </footer>
       </div>
     </div>

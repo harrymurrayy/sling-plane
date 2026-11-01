@@ -13,11 +13,13 @@ import { Obstacles } from './obstacles';
 import { createPlaneMesh, type PlaneModel } from './planeModel';
 import { computeStats, partsOf, type Levels, type Upgrade } from './upgrades';
 import { BIOMES, LEVELS } from './biomes';
+import { LevelMap } from './levelmap';
+import { countStars, starReward, starRow, starsFrom, challengesFor } from './stars';
 import {
   Scenery, Trail, createGround, createHorizon, createSky, createSlingshot, followGround, paintGround, paintSky, type Slingshot,
 } from './world';
 
-type GameState = 'title' | 'hangar' | 'aim' | 'flying' | 'result';
+type GameState = 'title' | 'hangar' | 'map' | 'aim' | 'flying' | 'result';
 
 // ---------- Save data ----------
 const load = <T>(key: string, fallback: T): T => {
@@ -48,6 +50,10 @@ if (!bests || levelIndex < 0) {
   save('bests', bests);
   save('level', levelIndex);
 }
+// The furthest level you've reached; levelIndex is whichever one you've picked to fly
+let unlocked = Math.max(levelIndex, load('unlocked', levelIndex));
+// Stars per level as a bitmask (bit i = challenge i)
+let stars = load<Record<string, number>>('stars', {});
 const syncBest = () => (best = bests![level().id] ?? 0);
 syncBest();
 if (levels.gear) {
@@ -162,13 +168,14 @@ const hud = {
   root: $('hud'), dist: $('dist'), best: $('best'), coins: $('coins'),
   hint: $('hint'), power: $('power'), powerFill: $('power-fill'), powerSweet: $('power-sweet'),
   fuel: $('fuel'), fuelFill: $('fuel-fill'), boostBtn: $('boost-btn'), rocketFill: $('rocket-fill'),
-  hangarBtn: $('hangar-btn'), hangarBadge: $('hangar-badge'), resultBadge: $('result-badge'),
+  hangarBtn: $('hangar-btn'), mapBtn: $('map-btn'), goalStars: $('goal-stars'), hangarBadge: $('hangar-badge'), resultBadge: $('result-badge'),
   speedo: $('speedo'), altimeter: $('altimeter'), mute: $('mute'),
   statsPill: $('stats-pill'), goal: $('goal'), goalName: $('goal-name'), goalTarget: $('goal-target'), goalFill: $('goal-fill'), goalBest: $('goal-best'), goalBestLabel: $('goal-best-label'), goalGhost: $('goal-ghost'),
 };
 const titleEl = $('title');
 const resultEl = $('result');
 const hangarEl = $('hangar');
+const mapEl = $('map');
 const speedo = new Speedo(hud.speedo as unknown as SVGSVGElement);
 const altimeter = new Altimeter(hud.altimeter);
 hud.best.textContent = best.toLocaleString();
@@ -251,6 +258,23 @@ const hangar = new Hangar(hangarEl, {
   },
 });
 
+// ---------- Level map ----------
+const levelMap = new LevelMap(mapEl, {
+  stars: () => stars,
+  bests: () => bests!,
+  unlocked: () => unlocked,
+  selected: () => levelIndex,
+  select(i: number) {
+    if (i > unlocked || i === levelIndex) return;
+    levelIndex = i;
+    save('level', levelIndex);
+    syncBest();
+    applyBiome();
+    updateTitle();
+    sound.click();
+  },
+});
+
 if (new URLSearchParams(location.search).has('dev')) {
   $('dev').classList.remove('hidden');
   $('dev-coins').addEventListener('click', () => {
@@ -284,8 +308,11 @@ resetBtn.addEventListener('click', () => {
   save('coins', 0);
   save('best', 0);
   save('levels', levels);
-  levelIndex = 0;
+  levelIndex = unlocked = 0;
   save('level', 0);
+  save('unlocked', 0);
+  stars = {};
+  save('stars', stars);
   applyBiome();
   updateTitle();
   hud.best.textContent = '0';
@@ -311,6 +338,10 @@ let air: Air = makeAir(0);
 const NEW_CAREER: Career = { flights: 0, distance: 0, coins: 0, perfects: 0, rings: 0, longest: 0 };
 let career: Career = { ...NEW_CAREER, ...load<Partial<Career>>('career', {}) };
 let ringsHit = 0;
+let runHits = 0;
+let launchedPerfect = false;
+// Stars lit on the goal bar this flight: ones you already had plus any earned so far
+let liveStars = 0;
 let bestAtLaunch = 0;
 let passedBest = false;
 let reachedFinish = false;
@@ -367,12 +398,15 @@ function enterAim() {
   titleEl.classList.add('hidden');
   resultEl.classList.add('hidden');
   closeHangar();
+  closeScreen(mapEl);
   hud.root.classList.remove('hidden');
   hud.hangarBtn.classList.remove('hidden');
+  hud.mapBtn.classList.remove('hidden');
   setFlightHud(false);
   hud.coins.textContent = wallet.toLocaleString();
   hud.dist.textContent = '0';
   showGoal(0);
+  hud.goalStars.innerHTML = starRow(stars[level().id] ?? 0);
   // Control hints only while you're learning
   if (career.flights < 3) showHint('Hold, then release at the top');
   else hideHint();
@@ -382,22 +416,26 @@ function enterAim() {
   snapCamera();
 }
 
-/** Slide the hangar back out the way it came in, then hide it. */
-function closeHangar() {
-  if (hangarEl.classList.contains('hidden') || hangarEl.classList.contains('closing')) return;
-  hangarEl.classList.add('closing');
-  hangarEl.addEventListener('animationend', function done(e) {
-    if (e.target !== hangarEl) return;
-    hangarEl.removeEventListener('animationend', done);
+/** Slide a full-screen menu back out the way it came in, then hide it. */
+function closeScreen(el: HTMLElement) {
+  if (el.classList.contains('hidden') || el.classList.contains('closing')) return;
+  el.classList.add('closing');
+  el.addEventListener('animationend', function done(e) {
+    if (e.target !== el) return;
+    el.removeEventListener('animationend', done);
     // Reopened while closing: leave it open
-    if (!hangarEl.classList.contains('closing')) return;
-    hangarEl.classList.remove('closing');
-    hangarEl.classList.add('hidden');
+    if (!el.classList.contains('closing')) return;
+    el.classList.remove('closing');
+    el.classList.add('hidden');
   });
 }
+const closeHangar = () => closeScreen(hangarEl);
+/** Hangar or level map: covers the whole screen, the plane sits parked behind. */
+const inMenu = () => state === 'hangar' || state === 'map';
 
-function openHangar() {
-  state = 'hangar';
+/** Shared setup for opening either full-screen menu. */
+function enterMenu(next: 'hangar' | 'map') {
+  state = next;
   hud.goal.classList.add('hidden');
   aim.yaw = 0;
   dragStart = null;
@@ -406,14 +444,27 @@ function openHangar() {
   resultEl.classList.add('hidden');
   hud.root.classList.add('hidden');
   hud.hangarBtn.classList.add('hidden');
+  hud.mapBtn.classList.add('hidden');
   hud.power.classList.add('hidden');
   setFlightHud(false);
   hideHint();
   clearRunEffects();
-  hangarEl.classList.remove('hidden', 'closing');
   hangarFading = 0.4;
-  hangar.open();
   sound.click();
+}
+
+function openHangar() {
+  enterMenu('hangar');
+  closeScreen(mapEl);
+  hangarEl.classList.remove('hidden', 'closing');
+  hangar.open();
+}
+
+function openMap() {
+  enterMenu('map');
+  closeHangar();
+  mapEl.classList.remove('hidden', 'closing');
+  levelMap.open();
 }
 
 function launch() {
@@ -426,6 +477,10 @@ function launch() {
   hud.coins.textContent = '+0';
   bestAtLaunch = best;
   passedBest = reachedFinish = false;
+  runHits = 0;
+  launchedPerfect = isPerfect();
+  liveStars = stars[level().id] ?? 0;
+  hud.goalStars.innerHTML = starRow(liveStars);
   hud.statsPill.classList.remove('record');
   hud.goal.classList.remove('cleared');
   showGoal(0);
@@ -433,6 +488,7 @@ function launch() {
   previewDots.forEach((d) => (d.visible = false));
   hud.power.classList.add('hidden');
   hud.hangarBtn.classList.add('hidden');
+  hud.mapBtn.classList.add('hidden');
   setFlightHud(true);
   if (career.flights < 3) showHint('Hold to climb, let go to dive', 4);
   else hideHint();
@@ -478,7 +534,16 @@ function endRun() {
   hud.goal.classList.add('hidden');
   const b = level();
   const dist = Math.max(0, Math.floor(flight.x));
-  const { distCoins, recordBonus, finishReward, earned } = runEarnings(dist);
+  const { distCoins, recordBonus, finishReward, earned: flown } = runEarnings(dist);
+  // Stars lit during the flight that you didn't have before pay out once
+  const hadStars = stars[b.id] ?? 0;
+  const newStars = liveStars & ~hadStars;
+  const starCoins = countStars(newStars) * starReward(b);
+  const earned = flown + starCoins;
+  if (newStars) {
+    stars = { ...stars, [b.id]: hadStars | newStars };
+    save('stars', stars);
+  }
   const before = wallet;
   wallet += earned;
   save('coins', wallet);
@@ -499,6 +564,12 @@ function endRun() {
   $('row-record').classList.toggle('hidden', recordBonus === 0);
   $('result-checkpoint').textContent = `+${finishReward}`;
   $('row-checkpoint').classList.toggle('hidden', finishReward === 0);
+  $('result-starcoins').textContent = `+${starCoins}`;
+  $('row-stars').classList.toggle('hidden', starCoins === 0);
+  const allStars = hadStars | newStars;
+  $('result-stars').innerHTML = starRow(allStars, newStars);
+  const todo = challengesFor(b).find((_, i) => !(allStars & (1 << i)));
+  $('result-next').textContent = todo ? `Next star: ${todo.text}` : 'All three stars earned';
 
   if (dist > best) {
     $('result-best').textContent = 'New best';
@@ -508,12 +579,14 @@ function endRun() {
     $('result-best').textContent = `Best on level ${b.n}: ${best.toLocaleString()}m`;
   }
 
-  // Completing the level moves you on to the next biome for the next flight
-  const next = reachedFinish ? LEVELS[levelIndex + 1] : undefined;
+  // Finishing the furthest level unlocks the next one and moves you onto it. Replays of
+  // earlier levels stay put so you can keep going for their stars.
+  const next = reachedFinish && levelIndex === unlocked ? LEVELS[levelIndex + 1] : undefined;
   const newBiome = next && next.theme !== b.theme;
   if (next) {
-    levelIndex++;
+    levelIndex = ++unlocked;
     save('level', levelIndex);
+    save('unlocked', unlocked);
     syncBest();
   }
   updateTitle();
@@ -626,6 +699,9 @@ hud.boostBtn.addEventListener('pointerdown', () => setBoost(true));
 for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) hud.boostBtn.addEventListener(ev, () => setBoost(false));
 
 hud.hangarBtn.addEventListener('click', openHangar);
+hud.mapBtn.addEventListener('click', openMap);
+$('result-map').addEventListener('click', openMap);
+$('map-fly').addEventListener('click', enterAim);
 $('result-hangar').addEventListener('click', openHangar);
 $('result-fly').addEventListener('click', enterAim);
 $('hangar-fly').addEventListener('click', enterAim);
@@ -638,12 +714,21 @@ window.addEventListener('keydown', (e) => {
   if (state === 'title' && start) {
     sound.unlock();
     enterAim();
-  } else if ((state === 'result' || state === 'hangar') && start) {
+  } else if ((state === 'result' || inMenu()) && start) {
     enterAim();
   } else if (state === 'flying' && start && flight.touchedDown) {
     finishLanding();
   } else if (state === 'aim' && e.key === ' ' && !dragStart) {
     startCharge(window.innerWidth / 2, window.innerHeight / 2);
+  } else if (e.key === 'm' || e.key === 'M' || (e.key === 'Escape' && state === 'map')) {
+    if (state === 'map') enterAim();
+    else if (state !== 'flying' && !dragStart) {
+      if (state === 'title') {
+        sound.unlock();
+        titleEl.classList.add('hidden');
+      }
+      openMap();
+    }
   } else if (e.key === 'h' || e.key === 'H' || (e.key === 'Escape' && state === 'hangar')) {
     // H toggles the hangar from any screen except mid-flight or mid-pull; Esc closes it
     if (state === 'hangar') enterAim();
@@ -681,7 +766,7 @@ const fwd = new THREE.Vector3();
 
 function desiredCamera() {
   const p = model.group.position;
-  if (state === 'hangar' || state === 'title') {
+  if (inMenu() || state === 'title') {
     // Slow orbit around the parked plane to show off the parts
     const r = state === 'title' ? 7.5 : 6;
     camPos.set(p.x + Math.sin(orbitAngle) * r, p.y + 1.4, p.z + Math.cos(orbitAngle) * r);
@@ -717,7 +802,7 @@ function snapCamera() {
 function updateViewOffset() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  if (state !== 'hangar') {
+  if (!inMenu()) {
     if (camera.view?.enabled) camera.clearViewOffset();
     return;
   }
@@ -840,6 +925,14 @@ function trackGoals() {
     vibrate(60);
   }
   if (passedBest) hud.best.textContent = Math.floor(x).toLocaleString();
+  // Stars light up on the goal bar the moment you earn them
+  const lit = liveStars | starsFrom(b, { dist: x, finished: reachedFinish, coins: runCoins, rings: ringsHit, hits: runHits, perfect: launchedPerfect });
+  if (lit !== liveStars) {
+    hud.goalStars.innerHTML = starRow(lit, lit & ~liveStars);
+    liveStars = lit;
+    sound.coin();
+    vibrate(20);
+  }
   showGoal(x);
 }
 
@@ -890,6 +983,7 @@ function frame(now: number) {
       vibrate(25);
     }
     if (ob.hit && !flight.touchedDown) {
+      runHits++;
       // Clipping anything costs most of your speed and knocks the nose down
       const keep = ob.hit === 'balloon' ? 0.5 : 0.4;
       flight.speed *= keep;
@@ -994,7 +1088,7 @@ function frame(now: number) {
     if (flight.stopped && (crashTimer += dt) > 0.7) endRun();
   } else if (state === 'aim' && dragStart) {
     updateCharge(dt);
-  } else if (state === 'hangar' || state === 'title') {
+  } else if (inMenu() || state === 'title') {
     orbitAngle += dt * (state === 'title' ? 0.25 : 0.35);
     if (model.propeller) model.propeller.rotation.x += 6 * dt;
   }
@@ -1016,7 +1110,7 @@ function frame(now: number) {
   for (const t of trails) t.update(camera.position, vapour);
 
   // The hangar covers the whole screen, so the world only draws while it's animating in
-  if (state !== 'hangar' || hangarFading > 0) renderer.render(scene, camera);
+  if (!inMenu() || hangarFading > 0) renderer.render(scene, camera);
   hangarFading = Math.max(0, hangarFading - dt);
   requestAnimationFrame(frame);
 }

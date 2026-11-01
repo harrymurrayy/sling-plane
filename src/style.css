@@ -221,7 +221,7 @@ button {
 #mute .off, #mute.muted .on { display: none; }
 #mute.muted .off { display: block; }
 #mute.muted { --c1: #8a94b8; --c2: #5b6699; --lip: #3e4775; }
-body:has(#hangar:not(.hidden)) #mute { display: none; }
+body:has(.screen:not(.hidden)) #mute { display: none; }
 
 #hint {
   position: fixed;
@@ -385,6 +385,15 @@ body:has(#hangar:not(.hidden)) #mute { display: none; }
   font-size: 20px;
 }
 #hangar-btn .badge, #result-hangar .badge { position: absolute; top: -12px; right: -10px; }
+#map-btn {
+  position: fixed;
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: var(--bottom);
+  height: 50px;
+  padding: 0 18px;
+  font-size: 20px;
+}
+#map-btn .icon, #result-map .icon { fill: #fff; stroke: var(--ink); stroke-width: 2.5; filter: drop-shadow(0 2px 0 var(--ink)); }
 
 /* ---------- Gauges ---------- */
 #speedo {
@@ -685,7 +694,7 @@ body:has(#hangar:not(.hidden)) #mute { display: none; }
 @keyframes shake { 25% { translate: -1px 1px; } 75% { translate: 1px -1px; } }
 
 /* ---------- Hangar: full-screen upgrade shop ---------- */
-#hangar {
+#hangar, #map {
   position: fixed;
   inset: 0;
   z-index: 10;
@@ -695,7 +704,7 @@ body:has(#hangar:not(.hidden)) #mute { display: none; }
     radial-gradient(ellipse 120% 70% at 50% 0%, #5cc0ff 0%, #2f6fe0 45%, #1d3a96 100%);
   animation: hangar-in 0.35s var(--ease-out);
 }
-#hangar.closing { animation: hangar-out 0.25s ease-in forwards; }
+#hangar.closing, #map.closing { animation: hangar-out 0.25s ease-in forwards; }
 @keyframes hangar-in { from { opacity: 0; transform: scale(1.04); } }
 @keyframes hangar-out { to { opacity: 0; transform: scale(1.04); } }
 .hangar-screen {
@@ -1026,3 +1035,173 @@ body:has(#hangar:not(.hidden)) #mute { display: none; }
 
 /* Cards keep their own height instead of stretching to the tallest in the row */
 .cards { align-items: start; }
+
+/* ---------- Stars ---------- */
+.star { width: 1em; height: 1em; flex: none; overflow: visible; }
+.star path { fill: #c9d3ea; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; }
+.star.on path { fill: var(--yellow); }
+/* A white glint on lit stars */
+.star.on { filter: drop-shadow(0 1.5px 0 var(--ink)); }
+.star.pop { animation: star-pop 0.6s var(--ease-pop) backwards; }
+@keyframes star-pop {
+  0% { transform: scale(0) rotate(-40deg); }
+  60% { transform: scale(1.5) rotate(8deg); }
+}
+.mini-stars { display: inline-flex; gap: 1px; font-size: 16px; margin-right: auto; margin-left: 6px; }
+.mini-stars .star path { fill: rgba(22, 29, 77, 0.8); stroke-width: 2.6; }
+.mini-stars .star.on path { fill: var(--yellow); }
+
+/* Results: three big stars under the distance, the next one to chase below */
+.result-stars { display: flex; justify-content: center; align-items: flex-end; gap: 6px; margin-top: 8px; font-size: 40px; }
+.result-stars .star:nth-child(2) { font-size: 52px; }
+.result-stars .star path { stroke-width: 2; }
+.result-stars .star.pop:nth-child(1) { animation-delay: 0.35s; }
+.result-stars .star.pop:nth-child(2) { animation-delay: 0.55s; }
+.result-stars .star.pop:nth-child(3) { animation-delay: 0.75s; }
+.result-next { min-height: 18px; margin-top: 4px; font-size: 13px; font-weight: 900; color: var(--label-2); }
+#result .button-row { display: flex; gap: 10px; }
+#result .button-row button { flex: 1; min-width: 0; padding: 0 10px; font-size: 20px; }
+
+/* ---------- Level map ---------- */
+.star-icon { width: 28px; height: 28px; fill: var(--yellow); stroke: var(--ink); stroke-width: 2.2; }
+.map-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px -6px 0;
+  padding: 4px 6px 20px;
+  touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 20px), transparent);
+}
+.map-list.fresh > * { animation: card-in 0.42s var(--ease-pop) backwards; }
+.map-list.fresh > :nth-child(2) { animation-delay: 60ms; }
+.map-list.fresh > :nth-child(3) { animation-delay: 120ms; }
+.map-list.fresh > :nth-child(4) { animation-delay: 180ms; }
+.map-list.fresh > :nth-child(5) { animation-delay: 240ms; }
+/* Each biome is a little postcard of its own sky, hills and ground */
+.map-biome {
+  position: relative;
+  flex: none;
+  padding: 10px 14px 12px;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse 60% 40% at 25% 100%, var(--hill) 0 98%, transparent 100%) 0 0 / 100% 62% no-repeat,
+    radial-gradient(ellipse 55% 34% at 80% 100%, var(--hill) 0 98%, transparent 100%) 0 0 / 100% 62% no-repeat,
+    linear-gradient(180deg, var(--sky) 0%, var(--haze) 62%, var(--ground) 62%);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.15), 0 5px 0 var(--ink);
+  overflow: hidden;
+}
+.map-biome.locked { filter: saturate(0.25) brightness(0.8); }
+.map-biome header { display: flex; justify-content: space-between; align-items: center; }
+.map-biome h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  -webkit-text-stroke: 5px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 0 var(--ink);
+}
+.biome-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px 2px 6px;
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  background: rgba(22, 29, 77, 0.75);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.biome-stars .star { font-size: 18px; }
+/* Five stops along a dashed trail */
+.map-path {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 0 2px;
+}
+.map-path::before {
+  content: '';
+  position: absolute;
+  left: 30px;
+  right: 30px;
+  top: 27px;
+  border-top: 4px dashed rgba(26, 31, 61, 0.55);
+}
+.node {
+  position: relative;
+  flex-direction: column;
+  gap: 2px;
+  width: 58px;
+}
+.node:nth-child(even) { transform: translateY(6px); }
+.node-disc {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fff, #dfe7fa);
+  box-shadow: inset 0 -4px 0 #b9c6e4, 0 4px 0 var(--ink);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 24px;
+  transition: transform 140ms var(--ease-pop);
+}
+.node:active .node-disc { transform: translateY(3px); box-shadow: inset 0 -3px 0 #b9c6e4, 0 1px 0 var(--ink); }
+.node.done .node-disc { background: radial-gradient(circle at 50% 35%, #fff07a, #ffc21a); box-shadow: inset 0 -4px 0 #d98a00, 0 4px 0 var(--ink); }
+.node.locked .node-disc { background: #8d97b8; box-shadow: inset 0 -4px 0 #6c769a, 0 4px 0 var(--ink); cursor: default; }
+.node.locked .node-disc .icon { width: 22px; height: 22px; stroke: var(--ink); }
+/* The level you'll fly next: a pulsing ring */
+.node.selected .node-disc { outline: 4px solid #fff; outline-offset: 2px; animation: node-pulse 1.4s ease-in-out infinite; }
+@keyframes node-pulse { 50% { outline-color: var(--yellow); transform: scale(1.06); } }
+.node-stars { display: flex; gap: 1px; font-size: 15px; }
+.node-stars .star:nth-child(2) { transform: translateY(-3px); }
+.node.locked .node-stars { visibility: hidden; }
+
+.map-bottom { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+.map-card {
+  padding: 12px 14px;
+  border: 3px solid var(--ink);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff, #e4ecfb);
+  box-shadow: inset 0 -4px 0 #c5d2ee, 0 5px 0 var(--ink);
+  color: var(--ink-text);
+}
+.map-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.map-card-title { font-family: var(--font-display); font-size: 24px; line-height: 1.1; color: var(--ink); }
+.map-card-sub { font-size: 13px; color: var(--ink-soft); }
+.map-card-best { display: flex; flex-direction: column; align-items: flex-end; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.map-card-best b { font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--ink); }
+.challenges { list-style: none; margin-top: 8px; }
+.challenges li { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+.challenges li + li { border-top: 2px dashed rgba(39, 48, 106, 0.12); }
+.challenges .star { font-size: 22px; }
+.challenges li span { flex: 1; min-width: 0; }
+.challenges li.got span { color: var(--ink-soft); text-decoration: line-through; text-decoration-thickness: 2px; }
+.challenges li b { display: inline-flex; padding: 1px 7px; border: 2px solid var(--ink); border-radius: 8px; background: var(--yellow); color: var(--ink); font-size: 12px; font-weight: 900; }
+#map-fly { height: 60px; font-size: 28px; }
+
+@media (max-width: 560px) {
+  #map-btn { height: 46px; padding: 0 14px; font-size: 18px; }
+  .node { width: 54px; }
+  .node-disc { width: 46px; height: 46px; font-size: 21px; }
+  .map-path::before { top: 24px; }
+  #map-fly { height: 56px; font-size: 26px; }
+}
+/* Short landscape: list and details side by side */
+@media (max-height: 500px) {
+  #map .hangar-screen { display: grid; grid-template-columns: 1fr minmax(280px, 40%); grid-template-rows: auto 1fr; column-gap: 14px; }
+  #map .hangar-top { display: flex; grid-column: 1 / -1; }
+  #map .map-list { grid-column: 1; grid-row: 2; }
+  #map .map-bottom { grid-column: 2; grid-row: 2; justify-content: flex-end; padding-bottom: 6px; }
+  #map .map-card { overflow-y: auto; }
+}
