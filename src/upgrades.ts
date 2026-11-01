@@ -26,7 +26,7 @@ export interface Upgrade {
 }
 
 /** Scales every price in the tree; the main knob for how long the game lasts. */
-const PRICE = 8;
+const PRICE = 5;
 const friendly = (raw: number) => {
   const step = raw < 100 ? 5 : raw < 1000 ? 10 : raw < 10000 ? 50 : 500;
   return Math.round(raw / step) * step;
@@ -201,18 +201,18 @@ export const UPGRADES: Upgrade[] = [
     branch: 'bonus',
     name: 'Coin value',
     maxLevel: 8,
-    describe: (l) => `×${(BASE_STATS.coinMultiplier * (1 + 0.25 * l)).toFixed(2).replace(/\.?0+$/, '')} all coins`,
+    describe: (l) => `×${(BASE_STATS.coinMultiplier * (1 + 0.15 * l)).toFixed(2).replace(/\.?0+$/, '')} all coins`,
     cost: curve(40, 1.7),
-    apply: (s, l) => (s.coinMultiplier = BASE_STATS.coinMultiplier * (1 + 0.25 * l)),
+    apply: (s, l) => (s.coinMultiplier = BASE_STATS.coinMultiplier * (1 + 0.15 * l)),
   },
   {
     id: 'sponsor',
     branch: 'bonus',
     name: 'Sponsor deal',
     maxLevel: 6,
-    describe: (l) => `${BASE_STATS.distanceCoins + 0.5 * l} coins per 10m flown`,
+    describe: (l) => `${BASE_STATS.distanceCoins + 0.25 * l} coins per 10m flown`,
     cost: curve(60, 1.9),
-    apply: (s, l) => (s.distanceCoins = BASE_STATS.distanceCoins + 0.5 * l),
+    apply: (s, l) => (s.distanceCoins = BASE_STATS.distanceCoins + 0.25 * l),
   },
   {
     id: 'magnet',

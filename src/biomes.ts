@@ -43,7 +43,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'desert',
     name: 'Desert',
-    coinBonus: 1.25,
+    coinBonus: 1.1,
     accent: 0xff9f0a,
     skyTop: 0x4a9be0,
     horizon: 0xf3dfba,
@@ -59,7 +59,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'autumn',
     name: 'Autumn Woods',
-    coinBonus: 1.5,
+    coinBonus: 1.2,
     accent: 0xff6b2c,
     skyTop: 0x5a8fd0,
     horizon: 0xf2d9c0,
@@ -75,7 +75,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'tundra',
     name: 'Tundra',
-    coinBonus: 1.75,
+    coinBonus: 1.3,
     accent: 0x64d2ff,
     skyTop: 0x6fa8dc,
     horizon: 0xe6f0f7,
@@ -91,7 +91,7 @@ export const BIOMES: Biome[] = [
   {
     id: 'volcano',
     name: 'Volcano',
-    coinBonus: 2,
+    coinBonus: 1.4,
     accent: 0xff453a,
     skyTop: 0x4a3a5a,
     horizon: 0xd99a7a,
@@ -121,15 +121,15 @@ export interface Level extends Biome {
 
 export const LEVELS_PER_BIOME = 5;
 
-// Finish lines climb along the upgrade curve so each level asks for a couple more upgrades:
-// the first needs a few cheap parts, the last needs nearly the whole tree and a clean flight.
-const FIRST_TARGET = 300;
-const LAST_TARGET = 3600;
+// Finish lines fitted to the progression sim: each sits just past the range a typical player
+// has after the planned play time (about 1 min for level 1, rising to ~7 min by level 25).
+const TARGETS = [250, 550, 700, 800, 1050, 1250, 1400, 1450, 1500, 1550, 1600, 1650, 1700,
+  1850, 1900, 2000, 2050, 2100, 2150, 2250, 2300, 2400, 2450, 2650, 2700];
 export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
   Array.from({ length: LEVELS_PER_BIOME }, (_, k) => {
     const i = theme * LEVELS_PER_BIOME + k;
     const t = i / (BIOMES.length * LEVELS_PER_BIOME - 1);
-    const target = Math.round((FIRST_TARGET + (LAST_TARGET - FIRST_TARGET) * t ** 1.15) / 50) * 50;
+    const target = TARGETS[i];
     return {
       ...b,
       id: `L${i + 1}`,
