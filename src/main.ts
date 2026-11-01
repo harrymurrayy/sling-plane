@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Sound } from './audio';
 import { buzz, persist } from './native';
+import { SettingsPanel, defaultSettings, type Settings } from './settings';
 import { CEILING, LAUNCH, THIN_AIR, type PlaneStats, PERFECT_BONUS } from './config';
 import { createFlight, stepFlight, type FlightInput, type FlightState, ringBoost, SKIM_HEIGHT } from './flight';
 import { Altimeter, Speedo } from './gauges';
@@ -38,6 +39,12 @@ const save = (key: string, v: unknown) => {
     persist(key, raw);
   } catch {}
 };
+let settings: Settings = { ...defaultSettings(), ...load<Partial<Settings>>('settings', {}) };
+// The old mute button's choice carries over
+if (localStorage.getItem('sling-plane:settings') === null && load('muted', false)) settings.sound = false;
+const PIXEL_RATIO = { low: 1, medium: 1.5, high: 2 } as const;
+const TREES = { low: 80, medium: 120, high: 160 } as const;
+
 // Personal best per map; `best` is always the current map's
 let bests = load<Record<string, number> | null>('bests', null);
 let best = 0;
@@ -72,7 +79,7 @@ if (levels.gear) {
 
 // ---------- Renderer & scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO[settings.quality]));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -176,7 +183,7 @@ const hud = {
   hint: $('hint'), power: $('power'), powerFill: $('power-fill'), powerSweet: $('power-sweet'),
   fuel: $('fuel'), fuelFill: $('fuel-fill'), boostBtn: $('boost-btn'), rocketFill: $('rocket-fill'),
   hangarBtn: $('hangar-btn'), mapBtn: $('map-btn'), goalStars: $('goal-stars'), hangarBadge: $('hangar-badge'), resultBadge: $('result-badge'),
-  speedo: $('speedo'), altimeter: $('altimeter'), mute: $('mute'),
+  speedo: $('speedo'), altimeter: $('altimeter'),
   statsPill: $('stats-pill'), goal: $('goal'), goalName: $('goal-name'), goalTarget: $('goal-target'), goalFill: $('goal-fill'), goalBest: $('goal-best'), goalBestLabel: $('goal-best-label'), goalGhost: $('goal-ghost'),
 };
 const titleEl = $('title');
@@ -231,17 +238,46 @@ function countUp(el: HTMLElement, from: number, to: number, ms: number, prefix =
   requestAnimationFrame(tick);
 }
 
-const vibrate = buzz;
+const vibrate = (ms: number) => settings.haptics && buzz(ms);
 
-sound.muted = load('muted', false);
-hud.mute.classList.toggle('muted', sound.muted);
-hud.mute.addEventListener('click', (e) => {
+// ---------- Settings ----------
+function applySettings() {
+  sound.setMuted(!settings.sound);
+  sound.setMusic(settings.music);
+  document.body.classList.toggle('reduce-motion', settings.reduceMotion);
+  const q = settings.quality;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO[q]));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  sun.castShadow = q !== 'low';
+  const shadowSize = q === 'high' ? 2048 : 1024;
+  if (sun.shadow.mapSize.x !== shadowSize) {
+    sun.shadow.mapSize.set(shadowSize, shadowSize);
+    sun.shadow.map?.dispose();
+    sun.shadow.map = null;
+  }
+  if (scenery.treeCount !== TREES[q]) {
+    scenery.treeCount = TREES[q];
+    paintedBiome = -1; // rebuild the trees
+    applyBiome();
+  }
+}
+applySettings();
+const settingsPanel = new SettingsPanel($('settings'), () => settings, (patch) => {
+  settings = { ...settings, ...patch };
+  save('settings', settings);
+  applySettings();
+  sound.click();
+  if (patch.haptics) vibrate(25);
+});
+$('settings-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   sound.unlock();
-  sound.setMuted(!sound.muted);
-  save('muted', sound.muted);
-  hud.mute.classList.toggle('muted', sound.muted);
+  // From the title, step past it so closing settings lands you on the slingshot
+  if (state === 'title') enterAim();
+  settingsPanel.open();
+  sound.click();
 });
+sound.setMood('menu');
 
 // ---------- Hangar ----------
 const hangar = new Hangar(hangarEl, {
@@ -409,6 +445,8 @@ function clearRunEffects() {
 
 function enterAim() {
   state = 'aim';
+  document.body.classList.remove('flying');
+  sound.setMood('menu');
   aim.yaw = 0;
   aim.power = 0;
   hud.powerSweet.style.left = `${(1 - stats.perfectZone) * 100}%`;
@@ -497,6 +535,8 @@ function openMap() {
 function launch() {
   flight = createFlight(stats, pocket.x, pocket.y, pocket.z, launchSpeed(), LAUNCH.pitch, aim.yaw);
   state = 'flying';
+  document.body.classList.add('flying');
+  sound.setMood('flight');
   crashTimer = 0;
   air = makeAir(0.35 + 0.15 * level().difficulty);
   obstacles.setLevel(level().difficulty);
@@ -556,6 +596,8 @@ function showRunTotal() {
 function endRun() {
   setEdgeWarn('none');
   state = 'result';
+  document.body.classList.remove('flying');
+  sound.setMood('menu');
   climbPointers.clear();
   boostHeld = false;
   hud.boostBtn.classList.remove('firing');
@@ -746,6 +788,10 @@ $('result-fly').addEventListener('click', enterAim);
 $('hangar-fly').addEventListener('click', enterAim);
 
 window.addEventListener('keydown', (e) => {
+  if (settingsPanel.isOpen) {
+    if (e.key === 'Escape') settingsPanel.close();
+    return;
+  }
   keys.add(e.key);
   if (e.key === ' ') e.preventDefault(); // don't let Space click a focused button
   if (e.repeat) return;
@@ -855,14 +901,14 @@ function updateCamera(dt: number) {
   const k = 1 - Math.exp(-6 * dt);
   camera.position.lerp(camPos, k);
   lookAt.lerp(camLook, k);
-  if (shake > 0) {
+  if (shake > 0 && !settings.reduceMotion) {
     camera.position.x += (Math.random() - 0.5) * shake;
     camera.position.y += (Math.random() - 0.5) * shake;
     shake = Math.max(0, shake - dt * 2.5);
   }
   camera.lookAt(lookAt);
   // Widen field of view with speed for a sense of rush
-  const targetFov = state === 'flying' ? 60 + Math.min(25, Math.max(0, flight.speed - 15) * 0.6) : 60;
+  const targetFov = state === 'flying' && !settings.reduceMotion ? 60 + Math.min(25, Math.max(0, flight.speed - 15) * 0.6) : 60;
   camera.fov += (targetFov - camera.fov) * k;
   updateViewOffset();
   camera.updateProjectionMatrix();
@@ -895,6 +941,8 @@ function impact(strength: number) {
 }
 
 function emitFlightEffects() {
+  // Low graphics: half the smoke and sparks
+  if (settings.quality === 'low' && Math.random() < 0.5) return;
   // Backwards along the plane's flight direction
   vel.set(-Math.cos(flight.psi), -Math.sin(flight.gamma) * 0.5, Math.sin(flight.psi));
 
@@ -1162,7 +1210,7 @@ function frame(now: number) {
   sun.position.copy(sun.target.position).add(SUN_DIR);
   updateCamera(dt);
   const fast = state === 'flying' && !flight.touchedDown;
-  speedLines.update(dt, flight.speed, fast);
+  speedLines.update(dt, flight.speed, fast && !settings.reduceMotion && settings.quality !== 'low');
   // Vapour trails thicken and brighten with speed
   const vapour = fast ? Math.min(1, Math.max(0, (flight.speed - 20) / 45)) : 0;
   for (const t of trails) t.update(camera.position, vapour);

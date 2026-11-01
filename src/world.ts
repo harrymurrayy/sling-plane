@@ -196,7 +196,6 @@ interface Tree {
   baseHeight: number;
 }
 
-const TREE_COUNT = 160;
 const trunkGeo = new THREE.CylinderGeometry(0.22, 0.35, 2, 7);
 const pineGeos = [new THREE.ConeGeometry(1.9, 2.6, 8), new THREE.ConeGeometry(1.5, 2.2, 8), new THREE.ConeGeometry(1.0, 1.8, 8)];
 const snowCapGeos = [new THREE.ConeGeometry(1.0, 1.0, 8), new THREE.ConeGeometry(0.8, 0.9, 8), new THREE.ConeGeometry(0.55, 0.8, 8)];
@@ -309,6 +308,8 @@ function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group;
 /** Recycled trees, clouds and distance markers around the plane. */
 export class Scenery {
   private trees: Tree[] = [];
+  /** Fewer on lower graphics settings; applies on the next setBiome. */
+  treeCount = 160;
   private clouds: THREE.Group[] = [];
   private cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.92 });
   private markers = new Map<number, THREE.Group>();
@@ -343,7 +344,7 @@ export class Scenery {
       });
     }
     this.trees = [];
-    for (let i = 0; i < TREE_COUNT; i++) {
+    for (let i = 0; i < this.treeCount; i++) {
       const { obj, radius, height } = buildTree(biome.trees[i % biome.trees.length], biome, i);
       obj.traverse((o) => (o.castShadow = true));
       this.scene.add(obj);

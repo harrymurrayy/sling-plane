@@ -5,12 +5,16 @@ export class Sound {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private noise!: AudioBuffer;
+  private musicBus!: GainNode;
   private wind!: { gain: GainNode; filter: BiquadFilterNode };
-  private engine!: { gain: GainNode; osc: OscillatorNode[] };
+  private engine!: { gain: GainNode; body: OscillatorNode; firing: OscillatorNode; blade: OscillatorNode };
   private rocket!: { gain: GainNode };
   private lastStretch = 0;
   private creakAcc = 0;
   muted = false;
+  musicOn = true;
+  private music: Music | null = null;
+  private musicMood: Mood = 'off';
 
   unlock() {
     if (this.ctx) {
@@ -19,42 +23,74 @@ export class Sound {
     }
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
+    // iOS: respect the silent switch and play alongside the player's own music
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = 'ambient';
     const ctx = (this.ctx = new Ctx());
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.8;
     this.master.connect(ctx.destination);
+    this.musicBus = ctx.createGain();
+    this.musicBus.gain.value = this.musicOn ? MUSIC_VOL : 0;
+    this.musicBus.connect(ctx.destination);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = this.noise.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
-    // Wind: looping noise through a band-pass that opens up with speed
+    // Wind: looping noise through a gentle low-pass that opens up with speed. Kept low and soft:
+    // a bright band-pass here is what made it sound like a computer fan
     const windSrc = this.loopNoise();
     const windFilter = ctx.createBiquadFilter();
-    windFilter.type = 'bandpass';
-    windFilter.Q.value = 0.8;
+    windFilter.type = 'lowpass';
+    windFilter.Q.value = 0.4;
     const windGain = ctx.createGain();
     windGain.gain.value = 0;
     windSrc.connect(windFilter).connect(windGain).connect(this.master);
     this.wind = { gain: windGain, filter: windFilter };
 
-    // Engine: two detuned buzzy oscillators through a low-pass
+    // Engine: a small piston engine and propeller rather than a steady drone.
+    // A low sawtooth is chopped into putts at the firing rate, and filtered noise is
+    // swept by the blades for the whup-whup of the prop.
     const engGain = ctx.createGain();
     engGain.gain.value = 0;
-    const engFilter = ctx.createBiquadFilter();
-    engFilter.type = 'lowpass';
-    engFilter.frequency.value = 900;
-    engFilter.connect(engGain).connect(this.master);
-    const osc = [ctx.createOscillator(), ctx.createOscillator()];
-    osc[0].type = 'sawtooth';
-    osc[1].type = 'square';
-    osc[1].detune.value = 12;
-    for (const o of osc) {
-      o.frequency.value = 60;
-      o.connect(engFilter);
-      o.start();
-    }
-    this.engine = { gain: engGain, osc };
+    engGain.connect(this.master);
+
+    const body = ctx.createOscillator();
+    body.type = 'sawtooth';
+    const bodyFilter = ctx.createBiquadFilter();
+    bodyFilter.type = 'lowpass';
+    bodyFilter.frequency.value = 320;
+    bodyFilter.Q.value = 1.2;
+    const putts = ctx.createGain();
+    putts.gain.value = 0.35;
+    body.connect(bodyFilter).connect(putts).connect(engGain);
+    // Square wave rounded off, so each putt has a soft attack
+    const firing = ctx.createOscillator();
+    firing.type = 'square';
+    const firingSoft = ctx.createBiquadFilter();
+    firingSoft.type = 'lowpass';
+    firingSoft.frequency.value = 80;
+    const firingDepth = ctx.createGain();
+    firingDepth.gain.value = 0.55;
+    firing.connect(firingSoft).connect(firingDepth).connect(putts.gain);
+
+    const propSrc = this.loopNoise();
+    const propFilter = ctx.createBiquadFilter();
+    propFilter.type = 'bandpass';
+    propFilter.frequency.value = 220;
+    propFilter.Q.value = 1.4;
+    const propAmp = ctx.createGain();
+    propAmp.gain.value = 0.5;
+    propSrc.connect(propFilter).connect(propAmp).connect(engGain);
+    const blade = ctx.createOscillator();
+    blade.type = 'sine';
+    const bladeDepth = ctx.createGain();
+    bladeDepth.gain.value = 0.45;
+    blade.connect(bladeDepth).connect(propAmp.gain);
+
+    for (const o of [body, firing, blade]) o.start();
+    this.engine = { gain: engGain, body, firing, blade };
 
     // Rocket: low rumbling noise
     const rocketSrc = this.loopNoise();
@@ -65,11 +101,25 @@ export class Sound {
     rocketGain.gain.value = 0;
     rocketSrc.connect(rocketFilter).connect(rocketGain).connect(this.master);
     this.rocket = { gain: rocketGain };
+    this.setMood(this.musicMood);
   }
 
   setMuted(m: boolean) {
     this.muted = m;
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
+  }
+
+  setMusic(on: boolean) {
+    this.musicOn = on;
+    if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? MUSIC_VOL : 0, this.ctx.currentTime, 0.3);
+  }
+
+  /** Background music: calm in menus, with drums in the air. */
+  setMood(mood: Mood) {
+    this.musicMood = mood;
+    if (!this.ctx) return;
+    this.music ??= new Music(this.ctx, this.musicBus, this.noise);
+    this.music.setMood(mood);
   }
 
   /** Call every frame with the current flight state (active = false silences the loops). */
@@ -78,12 +128,14 @@ export class Sound {
     if (!ctx) return;
     const t = ctx.currentTime;
     const v = active ? Math.min(1, speed / 70) : 0;
-    this.wind.gain.gain.setTargetAtTime(v * v * 0.5, t, 0.1);
-    this.wind.filter.frequency.setTargetAtTime(300 + v * 1800, t, 0.1);
-    this.engine.gain.gain.setTargetAtTime(active && engineOn ? 0.07 : 0, t, 0.08);
-    const pitch = 55 + speed * 1.6;
-    this.engine.osc[0].frequency.setTargetAtTime(pitch, t, 0.1);
-    this.engine.osc[1].frequency.setTargetAtTime(pitch * 0.5, t, 0.1);
+    this.wind.gain.gain.setTargetAtTime(v * v * 0.35, t, 0.15);
+    this.wind.filter.frequency.setTargetAtTime(220 + v * 900, t, 0.15);
+    this.engine.gain.gain.setTargetAtTime(active && engineOn ? 0.16 : 0, t, 0.12);
+    // Revs climb a little with airspeed, but stay low and chunky
+    const rev = 18 + Math.min(1, speed / 80) * 14; // firing pulses per second
+    this.engine.firing.frequency.setTargetAtTime(rev, t, 0.2);
+    this.engine.body.frequency.setTargetAtTime(rev * 2.5, t, 0.2);
+    this.engine.blade.frequency.setTargetAtTime(rev * 1.5, t, 0.2);
     this.rocket.gain.gain.setTargetAtTime(active && rocketOn ? 0.5 : 0, t, 0.05);
   }
 
@@ -199,6 +251,126 @@ export class Sound {
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     src.connect(f).connect(g).connect(this.master);
+    src.start(t, Math.random());
+    src.stop(t + dur);
+  }
+}
+
+const MUSIC_VOL = 0.32;
+export type Mood = 'off' | 'menu' | 'flight';
+
+// A bouncy four-chord loop (C, Am, F, G) with two melody variations, scheduled ahead
+// on the audio clock so it never drifts. 16 steps per bar.
+const BPM = 112;
+const STEP = 60 / BPM / 4;
+const CHORDS = [[60, 64, 67], [57, 60, 64], [53, 57, 60], [55, 59, 62]];
+const BASS = [36, 33, 29, 31];
+const _ = 0;
+const MELODY = [
+  [72, _, 76, _, 79, _, 76, _, 74, _, 72, _, 74, _, 76, _],
+  [72, _, _, 69, _, 72, _, 76, _, 74, _, 72, _, _, 69, _],
+  [69, _, 72, _, 77, _, 76, _, 74, _, 72, _, 69, _, 72, _],
+  [71, _, 74, _, 79, _, 77, _, 76, _, 74, _, 71, _, _, _],
+  [79, _, _, _, 76, _, _, _, 74, _, 76, _, 72, _, _, _],
+  [76, _, 74, _, 72, _, _, _, 69, _, 72, _, 76, _, _, _],
+  [77, _, _, _, 76, _, 74, _, 72, _, 74, _, 77, _, 76, _],
+  [74, _, 76, _, 74, _, 71, _, 67, _, _, _, _, _, _, _],
+];
+const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+
+class Music {
+  private mood: Mood = 'off';
+  private step = 0;
+  private next = 0;
+  private timer = 0;
+
+  constructor(private ctx: AudioContext, private out: GainNode, private noise: AudioBuffer) {}
+
+  setMood(mood: Mood) {
+    if (mood === this.mood) return;
+    const wasOff = this.mood === 'off';
+    this.mood = mood;
+    if (mood === 'off') {
+      clearInterval(this.timer);
+      this.timer = 0;
+      return;
+    }
+    if (wasOff) {
+      this.step = 0;
+      this.next = this.ctx.currentTime + 0.1;
+      this.timer = window.setInterval(() => this.schedule(), 25);
+    }
+  }
+
+  private schedule() {
+    while (this.next < this.ctx.currentTime + 0.15) {
+      this.play(this.step, this.next);
+      this.step = (this.step + 1) % (16 * 8);
+      this.next += STEP;
+    }
+  }
+
+  private play(step: number, t: number) {
+    const bar = Math.floor(step / 16);
+    const s = step % 16;
+    const chord = bar % 4;
+    const flying = this.mood === 'flight';
+
+    if (s === 0 || s === 8 || s === 11) this.note('triangle', hz(BASS[chord] + (s === 11 ? 12 : 0)), t, 0.28, 0.22);
+    // Off-beat chord plucks, like a ukulele strum
+    if (s % 4 === 2) for (const n of CHORDS[chord]) this.note('triangle', hz(n), t, 0.16, 0.045, 2400);
+    const m = MELODY[bar][s];
+    if (m) this.note('square', hz(m), t, STEP * 1.8, flying ? 0.035 : 0.028, 1800);
+
+    if (!flying) return;
+    if (s % 8 === 0) this.kick(t);
+    if (s % 8 === 4) this.hit(t, 1800, 0.09, 0.12);
+    if (s % 2 === 0) this.hit(t, 7000, 0.03, 0.03);
+  }
+
+  private note(type: OscillatorType, f: number, t: number, dur: number, vol: number, cutoff = 0) {
+    const o = this.ctx.createOscillator();
+    o.type = type;
+    o.frequency.value = f;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let node: AudioNode = o;
+    if (cutoff) {
+      const f2 = this.ctx.createBiquadFilter();
+      f2.type = 'lowpass';
+      f2.frequency.value = cutoff;
+      node = o.connect(f2);
+    }
+    node.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + dur + 0.02);
+  }
+
+  private kick(t: number) {
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.frequency.setValueAtTime(130, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    g.gain.setValueAtTime(0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(g).connect(this.out);
+    o.start(t);
+    o.stop(t + 0.2);
+  }
+
+  /** Noise hit: snare (mid band) or hi-hat (high band). */
+  private hit(t: number, freq: number, vol: number, dur: number) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = freq > 4000 ? 'highpass' : 'bandpass';
+    f.frequency.value = freq;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(f).connect(g).connect(this.out);
     src.start(t, Math.random());
     src.stop(t + dur);
   }
