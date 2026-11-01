@@ -186,6 +186,8 @@ button {
   align-items: flex-start;
   pointer-events: none;
 }
+/* The settings button hides in the air, so the coins slide over into its spot */
+body.flying #hud { right: var(--gutter); }
 .stats { padding: 6px 14px 8px; transition: box-shadow 200ms ease-out, transform 200ms var(--ease-pop); }
 .stats .dist {
   font-family: var(--font-display);
