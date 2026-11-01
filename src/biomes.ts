@@ -1,4 +1,4 @@
-export type TreeKind = 'pine' | 'snowPine' | 'broadleaf' | 'cactus' | 'rock' | 'deadTree';
+export type TreeKind = 'pine' | 'snowPine' | 'broadleaf' | 'cactus' | 'rock' | 'deadTree' | 'lollipop' | 'cottonCandy' | 'mushroom';
 
 export interface Biome {
   id: string;
@@ -20,6 +20,8 @@ export interface Biome {
   foliage: number[];
   /** Repeat a kind to make it more common. */
   trees: TreeKind[];
+  /** Rainbows arching over the horizon. */
+  rainbows?: boolean;
 }
 
 // Visual themes. Each one hosts several levels (see LEVELS below).
@@ -145,19 +147,20 @@ export const LEVELS: Level[] = BIOMES.flatMap((b, theme) =>
 /** Free flight: unlocked after the last level. No finish line, just your best, and fuel cans keep the engine going. */
 export const FREE: Level = {
   id: 'free',
-  name: 'Sunset Coast',
+  name: 'Unicorn Land',
   coinBonus: 1.4,
-  accent: 0xff7ab8,
-  skyTop: 0x3b3a8f,
-  horizon: 0xffb48a,
-  mountains: [0xc98aa6, 0x8f5f8f],
-  hemi: [0xffe0cc, 0x3f4f5a],
-  sun: 0xffc08a,
-  cloud: 0xffd6e0,
-  ground: { base: '#5c9468', patches: ['rgba(70,130,90,0.5)', 'rgba(240,200,140,0.35)'], specks: ['rgba(40,90,70,0.35)', 'rgba(255,170,150,0.3)'] },
-  trunk: 0x5a3a3a,
-  foliage: [0x2f7a6a, 0x3f8f6a, 0xd9708f, 0x8f5fa8],
-  trees: ['broadleaf', 'pine', 'rock'],
+  accent: 0xff6fd8,
+  skyTop: 0x7fb2ff,
+  horizon: 0xffd3f0,
+  mountains: [0xe9c9ff, 0xc7a3f7],
+  hemi: [0xfff0fb, 0xa98fd6],
+  sun: 0xfff2f8,
+  cloud: 0xfff0fb,
+  ground: { base: '#86dea6', patches: ['rgba(255,170,220,0.5)', 'rgba(150,225,255,0.45)'], specks: ['rgba(255,120,200,0.45)', 'rgba(120,200,255,0.45)'] },
+  trunk: 0xfff6fb,
+  foliage: [0xff9ad5, 0x9fdcff, 0xfff08a, 0xc9a6ff, 0x9af0c4],
+  trees: ['lollipop', 'cottonCandy', 'mushroom', 'cottonCandy'],
+  rainbows: true,
   n: LEVELS.length + 1,
   theme: BIOMES.length,
   difficulty: 2,

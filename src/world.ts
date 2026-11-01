@@ -55,6 +55,24 @@ export function createHorizon(): THREE.Group {
       group.add(m);
     }
   }
+  // Rainbows: hidden unless the biome asks for them
+  const rainbows = new THREE.Group();
+  const bands = [0xff5a6e, 0xffa04a, 0xffe25a, 0x6fe08a, 0x5ac8ff, 0x9a7aff];
+  const bandMats = bands.map((c) => new THREE.MeshBasicMaterial({ color: c, fog: false, transparent: true, opacity: 0.55, depthWrite: false }));
+  for (const [a, r] of [[0.15, 420], [2.3, 520], [3.9, 360]] as const) {
+    const bow = new THREE.Group();
+    bands.forEach((_, k) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(r - k * 16, 8.5, 6, 64, Math.PI), bandMats[k]);
+      m.renderOrder = -1;
+      bow.add(m);
+    });
+    bow.position.set(Math.cos(a) * 1500, -20, Math.sin(a) * 1500);
+    bow.lookAt(0, -20, 0);
+    rainbows.add(bow);
+  }
+  rainbows.visible = false;
+  group.add(rainbows);
+  group.userData.rainbows = rainbows;
   return group;
 }
 
@@ -63,6 +81,7 @@ export function paintSky(sky: ReturnType<typeof createSky>, horizon: THREE.Group
   sky.material.uniforms.top.value.set(biome.skyTop);
   sky.material.uniforms.horizon.value.set(biome.horizon);
   (horizon.userData.mats as THREE.MeshBasicMaterial[]).forEach((m, i) => m.color.set(biome.mountains[i]));
+  (horizon.userData.rainbows as THREE.Group).visible = !!biome.rainbows;
 }
 
 export interface Slingshot {
@@ -186,6 +205,15 @@ const cactusGeo = new THREE.CapsuleGeometry(0.45, 3.2, 4, 10);
 const armGeo = new THREE.CapsuleGeometry(0.3, 1.1, 4, 8);
 const rockGeo = new THREE.DodecahedronGeometry(1.4, 0);
 const branchGeo = new THREE.CylinderGeometry(0.08, 0.14, 1.8, 6);
+// Unicorn Land sweets
+const stickGeo = new THREE.CylinderGeometry(0.09, 0.09, 3.2, 8);
+const candyGeo = new THREE.CylinderGeometry(1.3, 1.3, 0.35, 28).rotateX(Math.PI / 2);
+const swirlGeos = [new THREE.TorusGeometry(0.95, 0.13, 6, 28), new THREE.TorusGeometry(0.5, 0.13, 6, 24)];
+const coneGeo = new THREE.ConeGeometry(0.35, 1.6, 10).rotateX(Math.PI);
+const puffGeo = new THREE.IcosahedronGeometry(1.1, 2);
+const stemGeo = new THREE.CylinderGeometry(0.45, 0.6, 2, 12);
+const capGeo = new THREE.SphereGeometry(1.8, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+const spotGeo = new THREE.SphereGeometry(0.22, 8, 6);
 
 /** Builds one tree (or cactus, rock, ...) and returns its collision size. */
 function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group; radius: number; height: number } {
@@ -234,6 +262,36 @@ function buildTree(kind: TreeKind, biome: Biome, i: number): { obj: THREE.Group;
       const m = add(rockGeo, lambert(color), 0, 0.7);
       m.scale.set(1 + Math.random() * 0.6, 0.6 + Math.random() * 0.5, 1 + Math.random() * 0.4);
       return { obj, radius: 1.6, height: 1.6 };
+    }
+    case 'lollipop': {
+      // Smooth shading for the candy so it looks glossy against the faceted trees
+      const sweet = (c: number) => new THREE.MeshLambertMaterial({ color: c });
+      add(stickGeo, sweet(0xffffff), 0, 1.6);
+      add(candyGeo, sweet(color), 0, 3.9);
+      const swirl = sweet(0xffffff);
+      for (const z of [-0.18, 0.18]) swirlGeos.forEach((g) => add(g, swirl, 0, 3.9, z));
+      obj.rotation.y = Math.PI / 2; // face the flight line
+      return { obj, radius: 1.3, height: 5.2 };
+    }
+    case 'cottonCandy': {
+      add(coneGeo, lambert(0xffffff), 0, 0.8);
+      const fluff = new THREE.MeshLambertMaterial({ color });
+      for (const [x, y, z, sc] of [[0, 2.2, 0, 1.3], [0.7, 2.7, 0.3, 1], [-0.6, 2.8, -0.2, 1.05], [0, 3.4, 0, 0.9]]) {
+        add(puffGeo, fluff, x, y, z).scale.setScalar(sc);
+      }
+      return { obj, radius: 1.5, height: 4.4 };
+    }
+    case 'mushroom': {
+      add(stemGeo, lambert(0xfff3e0), 0, 1);
+      add(capGeo, new THREE.MeshLambertMaterial({ color }), 0, 1.9);
+      const spots = lambert(0xffffff);
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2;
+        const tilt = 0.5 + (k % 2) * 0.35;
+        add(spotGeo, spots, Math.cos(a) * Math.sin(tilt) * 1.75, 1.9 + Math.cos(tilt) * 1.75, Math.sin(a) * Math.sin(tilt) * 1.75);
+      }
+      add(spotGeo, spots, 0, 3.7);
+      return { obj, radius: 1.8, height: 3.7 };
     }
     case 'deadTree': {
       const mat = lambert(biome.trunk);
